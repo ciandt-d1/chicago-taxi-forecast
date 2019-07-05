@@ -144,7 +144,7 @@ class GroupItemsByDate(beam.CombineFn):
             for hour in range(24):
                 output[date_key][hour] = {}
                 for ca in self.community_area_list:
-                    output[date_key][hour][ca] = 0            
+                    output[date_key][hour][ca] = 0
 
         for a in accumulators:
             for date, date_dict in a.items():
@@ -154,14 +154,14 @@ class GroupItemsByDate(beam.CombineFn):
         return output
 
     def extract_output(self, output):
-        
+
         flattened_dict = {
             'date': [],
             'hour': [],
-            'community_area':[],
+            'community_area': [],
             'n_trips': []
         }
-        
+
         for date, date_dict in output.items():
             for hour, hour_dict in date_dict.items():
                 for ca in hour_dict:
@@ -169,38 +169,67 @@ class GroupItemsByDate(beam.CombineFn):
                     flattened_dict['hour'].append(hour)
                     flattened_dict['community_area'].append(ca)
                     flattened_dict['n_trips'].append(hour_dict[ca])
-        
-        flattened_df = pd.DataFrame(flattened_dict)
+
+        return flattened_dict
+        # flattened_df = pd.DataFrame(flattened_dict)
         # flattened_df['date'] = pd.to_datetime(flattened_df['date'])
         # flattened_df['hour'] = pd.to_numeric(flattened_df['hour'])
+        # flattened_df['day_of_month'] = flattened_df['date'].apply(lambda t: t.day)
+        # flattened_df['day_of_week'] = flattened_df['date'].apply(lambda t: t.dayofweek)
+        # flattened_df['month'] = flattened_df['date'].apply(lambda t: t.month)
+        # flattened_df['week_number'] = flattened_df['date'].apply(lambda t: t.weekofyear)
+
         # flattened_df['community_area'] = pd.to_numeric(flattened_df['community_area'])
         # flattened_df.sort_values(by=['date','hour','community_area'],ascending=True,inplace=True)
         # print(flattened_df.head(10))
 
-        return flattened_df
-        # return output
-
+        # return flattened_df
 
 
 class ExtractRawTimeseriesWindow(beam.DoFn):
-    def __init__(self, community_area_list, window_size,  window_offset):
-        self.community_area_list = community_area_list
+    def __init__(self,  window_size):
         self.window_size = window_size
 
     def process(self, element):
 
-        raw_df = pd.DataFrame(element).transpose().sort_index(
-            ascending=True)
+        flattened_df = pd.DataFrame(element)
+        flattened_df['date'] = pd.to_datetime(flattened_df['date'])
+        flattened_df['hour'] = pd.to_numeric(flattened_df['hour'])
+        flattened_df['day_of_month'] = flattened_df['date'].apply(
+            lambda t: t.day)
+        flattened_df['day_of_week'] = flattened_df['date'].apply(
+            lambda t: t.dayofweek)
+        flattened_df['month'] = flattened_df['date'].apply(lambda t: t.month)
+        flattened_df['week_number'] = flattened_df['date'].apply(
+            lambda t: t.weekofyear)
 
-        for i in range(0, (len(raw_df)-self.window_size-self.steps_to_forecast)+1, self.window_offset):
-            window = raw_df.iloc[i:(i+self.window_size+self.steps_to_forecast)]
-            window_dict = {}
-            for sku in self.community_area_list:
-                window_dict['past_' +
-                            sku] = window[sku].values[:self.window_size]
-                window_dict['forecast_' +
-                            sku] = window[sku].values[self.window_size:]
-            yield window_dict
+        for ca, trips_time_series in flattened_df.groupby('community_area'):
+
+            # force sorting
+            ts_df = trips_time_series.sort_values(
+                ['date', 'hour'], ascending=True)
+
+            for i in range(0, (len(ts_df)-self.window_size-1), 1):
+                window = ts_df.iloc[i:(i+self.window_size+1)]
+                
+                window_dict = {
+                    'hour': None,
+                    'day_of_week': None,
+                    'day_of_month': None,
+                    'week_number': None,
+                    'month': None,
+                    'n_trips': None,
+                }
+
+                for k in window_dict:
+                    window_dict[k] = window[k].values[:self.window_size]
+
+                window_dict['community_area'] = [ca] * \
+                    self.window_size  # Add community area
+                # Add target
+                window_dict['target'] = window['n_trips'].values[self.window_size]
+
+                yield window_dict
 
 
 def preprocess_fn(ts_window):
@@ -282,11 +311,8 @@ if __name__ == '__main__':
             # _ = orders_by_date_train | "Print orders_by_date_train" >> beam.Map(
             #     print)
 
-            # ts_windows_train = (orders_by_date_train | "Extract timeseries windows - train" >>
-            #                     beam.ParDo(ExtractRawTimeseriesWindow(community_area_list,
-            #                                                           known_args.window_size,
-            #                                                           known_args.steps_to_forecast,
-            #                                                           known_args.window_offset)))
+            ts_windows_train = (orders_by_date_train | "Extract timeseries windows - train" >>
+                                beam.ParDo(ExtractRawTimeseriesWindow(known_args.window_size)))
 
             # _  = ts_windows_train | "Print ts_windows_train" >> beam.Map(print)
 
