@@ -27,10 +27,10 @@ python3 bq2tfrecord.py \
 --tfrecord-dir /tmp \
 --tfx-artifacts-dir /tmp \
 --project ciandt-cognitive-sandbox \
---window-size 24 \
---start-date 2019-01-01 \
+--window-size 6 \
+--start-date 2019-04-10 \
 --end-date  2019-04-30 \
---split-date 2019-04-01 \
+--split-date 2019-04-20 \
 --temp-dir /tmp \
 --runner DirectRunner
 ```

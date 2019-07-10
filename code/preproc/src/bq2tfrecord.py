@@ -4,8 +4,9 @@
 Process Chigaco Taxi dataset from BigQuery to TFRecords using TensorFlow Transform
 """
 
-import pandas as pd
 import argparse
+import pandas as pd
+import numpy as np
 import datetime
 import os
 import sys
@@ -45,20 +46,90 @@ def query_trips(start_date, end_date):
 
     query_str = """
         SELECT
-        pickup_community_area,
-        EXTRACT(DATE from trip_start_timestamp) as date,
-        EXTRACT(HOUR from trip_start_timestamp) as hour,
-        COUNT(*) as n_trips
-        FROM `bigquery-public-data.chicago_taxi_trips.taxi_trips`
-        WHERE trip_start_timestamp >= '{start_date}'
-        AND trip_start_timestamp <'{end_date}'
-        AND pickup_community_area is NOT NULL
+            pickup_community_area,
+            EXTRACT(DATE from trip_start_timestamp) as date,
+            EXTRACT(HOUR from trip_start_timestamp) as hour,
+            COUNT(*) as n_trips
+                FROM `bigquery-public-data.chicago_taxi_trips.taxi_trips`
+                WHERE trip_start_timestamp >= '{start_date}'
+                AND trip_start_timestamp <'{end_date}'
+                AND pickup_community_area is NOT NULL
         GROUP BY date, hour, pickup_community_area
-        ORDER BY date, hour, pickup_community_area ASC
-        LIMIT 10
+        ORDER BY date, hour, pickup_community_area ASC        
+    """.format(start_date=start_date, end_date=end_date)
+    # LIMIT 10
+
+    return query_str
+
+
+def query_znorm_stats(start_date, end_date):
+    query_str = """
+        SELECT pickup_community_area, AVG(n_trips) mean, STDDEV(n_trips) std FROM
+            (SELECT
+                pickup_community_area,
+                EXTRACT(DATE from trip_start_timestamp) as date,
+                EXTRACT(HOUR from trip_start_timestamp) as hour,
+                COUNT(*) as n_trips
+                FROM `bigquery-public-data.chicago_taxi_trips.taxi_trips`
+                    WHERE trip_start_timestamp >= '{start_date}'
+                    AND trip_start_timestamp < '{end_date}'
+                    AND pickup_community_area IS NOT NULL
+                GROUP BY date, hour, pickup_community_area
+                ORDER BY date, hour ASC)
+        GROUP BY pickup_community_area
+        ORDER BY pickup_community_area ASC
     """.format(start_date=start_date, end_date=end_date)
 
     return query_str
+
+
+class ParseZnormStatsRow(beam.DoFn):
+    def process(self, element):
+        yield {'pickup_community_area': str(element['pickup_community_area']),
+               'mean': float(element['mean']),
+               'std': float(element['std'])
+               }
+
+
+def read_znorm_stats_from_bq(pipeline, start_date, end_date):
+    query_str = query_znorm_stats(start_date, end_date)
+    raw_data = (pipeline |
+                "Read znorm stats from BigQuery from {} to {}".format(start_date, end_date) >> beam.io.Read(
+                    beam.io.BigQuerySource(query=query_str, use_standard_sql=True)) |
+                "Parse stats from {} to {}".format(start_date, end_date) >> beam.ParDo(ParseZnormStatsRow()))
+
+    return raw_data
+
+
+class CombineZnormStats(beam.CombineFn):
+
+    def __init__(self):
+        super(CombineZnormStats, self).__init__()
+
+    def create_accumulator(self):
+        return {}
+
+    def add_input(self, accumulator, element):
+        # accumulator.append(str(element.get('pickup_community_area')))
+        for k in element.keys():
+            if k not in accumulator:
+                accumulator[k] = []
+            accumulator[k].append(element[k])
+
+        return accumulator
+
+    def merge_accumulators(self, accumulators):
+        output = {}
+        for acc in accumulators:
+            for k in acc:
+                if k not in output:
+                    output[k] = []
+                output[k].extend(acc[k])
+
+        return output
+
+    def extract_output(self, output):
+        return output
 
 
 class ParseRow(beam.DoFn):
@@ -66,11 +137,11 @@ class ParseRow(beam.DoFn):
         yield {'pickup_community_area': str(element['pickup_community_area']),
                'date': element['date'],
                'hour': int(element['hour']),
-               'n_trips': int(element['n_trips'])
+               'n_trips': float(element['n_trips'])
                }
 
 
-def read_from_bq(pipeline, start_date, end_date):
+def read_data_from_bq(pipeline, start_date, end_date):
 
     query_str = query_trips(start_date, end_date)
     raw_data = (pipeline |
@@ -171,19 +242,6 @@ class GroupItemsByDate(beam.CombineFn):
                     flattened_dict['n_trips'].append(hour_dict[ca])
 
         return flattened_dict
-        # flattened_df = pd.DataFrame(flattened_dict)
-        # flattened_df['date'] = pd.to_datetime(flattened_df['date'])
-        # flattened_df['hour'] = pd.to_numeric(flattened_df['hour'])
-        # flattened_df['day_of_month'] = flattened_df['date'].apply(lambda t: t.day)
-        # flattened_df['day_of_week'] = flattened_df['date'].apply(lambda t: t.dayofweek)
-        # flattened_df['month'] = flattened_df['date'].apply(lambda t: t.month)
-        # flattened_df['week_number'] = flattened_df['date'].apply(lambda t: t.weekofyear)
-
-        # flattened_df['community_area'] = pd.to_numeric(flattened_df['community_area'])
-        # flattened_df.sort_values(by=['date','hour','community_area'],ascending=True,inplace=True)
-        # print(flattened_df.head(10))
-
-        # return flattened_df
 
 
 class ExtractRawTimeseriesWindow(beam.DoFn):
@@ -211,7 +269,7 @@ class ExtractRawTimeseriesWindow(beam.DoFn):
 
             for i in range(0, (len(ts_df)-self.window_size-1), 1):
                 window = ts_df.iloc[i:(i+self.window_size+1)]
-                
+
                 window_dict = {
                     'hour': None,
                     'day_of_week': None,
@@ -224,33 +282,108 @@ class ExtractRawTimeseriesWindow(beam.DoFn):
                 for k in window_dict:
                     window_dict[k] = window[k].values[:self.window_size]
 
-                window_dict['community_area'] = [ca] * \
+                window_dict['community_area'] = [str(ca)] * \
                     self.window_size  # Add community area
+                window_dict['community_area_code'] = str(ca)
+
                 # Add target
-                window_dict['target'] = window['n_trips'].values[self.window_size]
+                window_dict['target'] = window['n_trips'].values[self.window_size].astype(
+                    np.float32)
 
                 yield window_dict
 
 
-def preprocess_fn(ts_window):
-    output_features = {}
-    feat_list = list(ts_window.keys())
+def scale_temporal_feature(value, period):
+    scaled_value = tf.divide(tf.cast(value, tf.float32), period)
 
-    for feat_name in feat_list:
-        output_features[feat_name] = tft.scale_to_z_score(ts_window[feat_name])
+    return scaled_value
+
+
+def process_temporal_features_sin(value, period):
+    scaled_value = scale_temporal_feature(value, period)
+    value_sin = tf.math.sin(2*np.pi*scaled_value)
+
+    return value_sin
+
+
+def process_temporal_features_cos(value, period):
+    scaled_value = scale_temporal_feature(value, period)
+    value_cos = tf.math.cos(2*np.pi*scaled_value)
+
+    return value_cos
+
+
+def preprocess_fn(features, znorm_stats):
+
+    output_features = {}
+
+    output_features['hour_sin'] = process_temporal_features_sin(
+        features['hour'], 24)
+    output_features['hour_cos'] = process_temporal_features_cos(
+        features['hour'], 24)
+    output_features['day_of_week_sin'] = process_temporal_features_sin(
+        features['day_of_week'], 7)
+    output_features['day_of_week_cos'] = process_temporal_features_cos(
+        features['day_of_week'], 7)
+    output_features['day_of_month_sin'] = process_temporal_features_sin(
+        features['day_of_month'], 31)
+    output_features['day_of_month_cos'] = process_temporal_features_cos(
+        features['day_of_month'], 31)
+    output_features['week_number_sin'] = process_temporal_features_sin(
+        features['week_number'], 54)
+    output_features['week_number_cos'] = process_temporal_features_cos(
+        features['week_number'], 54)
+    output_features['month_sin'] = process_temporal_features_sin(
+        features['month'], 12)
+    output_features['month_cos'] = process_temporal_features_cos(
+        features['month'], 12)
+
+    output_features['community_area'] = features['community_area']
+
+    # convert znorm statistics into tensor lookup table
+    lookup_mean = tf.lookup.StaticHashTable(
+        tf.lookup.KeyValueTensorInitializer(keys=znorm_stats['pickup_community_area'],
+                                            values=znorm_stats['mean']),
+        default_value=0)
+
+    lookup_std = tf.lookup.StaticHashTable(
+        tf.lookup.KeyValueTensorInitializer(keys=znorm_stats['pickup_community_area'],
+                                            values=znorm_stats['std']),
+        default_value=1)
+
+    # apply znorm
+    znorm_tensor_mean = lookup_mean.lookup(
+        keys=features['community_area_code'])
+    znorm_tensor_std = lookup_std.lookup(keys=features['community_area_code'])
+
+    znorm_tensor_mean = tf.reshape(znorm_tensor_mean, [-1, 1])
+    znorm_tensor_std = tf.reshape(znorm_tensor_std, [-1, 1])
+    target = tf.reshape(features['target'], [-1, 1])    
+    
+    output_features['n_trips'] = tf.math.divide(
+        tf.math.subtract(features['n_trips'], znorm_tensor_mean), znorm_tensor_std)
+    output_features['target'] = tf.math.divide(
+        tf.math.subtract(target, znorm_tensor_mean), znorm_tensor_std)
 
     return output_features
 
 
-def create_ts_metadata(community_area_list, window_size, steps_to_forecast):
+def create_ts_metadata(window_size):
 
-    schema = {}
-    for sku in community_area_list:
-        schema.update({'past_'+sku: dataset_schema.ColumnSchema(
-            tf.float32, [window_size], dataset_schema.FixedColumnRepresentation())})
-        schema.update({'forecast_'+sku: dataset_schema.ColumnSchema(
-            tf.float32, [steps_to_forecast], dataset_schema.FixedColumnRepresentation())})
+    schema_dict = {
+        'hour': tf.FixedLenFeature(shape=[window_size], dtype=tf.int64, default_value=None),
+        'day_of_week': tf.FixedLenFeature(shape=[window_size], dtype=tf.int64, default_value=None),
+        'day_of_month': tf.FixedLenFeature(shape=[window_size], dtype=tf.int64, default_value=None),
+        'week_number': tf.FixedLenFeature(shape=[window_size], dtype=tf.int64, default_value=None),
+        'month': tf.FixedLenFeature(shape=[window_size], dtype=tf.int64, default_value=None),
+        'community_area': tf.FixedLenFeature(shape=[window_size], dtype=tf.string, default_value=None),
+        'community_area_code': tf.FixedLenFeature(shape=[], dtype=tf.string, default_value=None),
+        'n_trips': tf.FixedLenFeature(shape=[window_size], dtype=tf.float32, default_value=None),
+        'target': tf.FixedLenFeature(shape=[], dtype=tf.float32, default_value=None)
+    }
 
+    schema = dataset_metadata.DatasetMetadata(
+        dataset_schema.from_feature_spec(schema_dict))
     return schema
 
 
@@ -281,8 +414,10 @@ if __name__ == '__main__':
 
     pipeline_options = PipelineOptions(flags=pipeline_args)
 
-    # List available community areas
+    # Query metadata
     with beam.Pipeline(options=pipeline_options) as pipeline:
+
+        # List eligible community areas
         community_area_list_p = (pipeline |
                                  'Query eligible Community Areas' >> beam.io.Read(beam.io.BigQuerySource(
                                      query=COMMUNITY_AREA_QUERY, use_standard_sql=True)) |
@@ -292,15 +427,29 @@ if __name__ == '__main__':
                                      known_args.temp_dir, 'community_area_list.json'), shard_name_template='')
                                  )
 
+        # Query znorm statistics
+        znorm_stats_p = read_znorm_stats_from_bq(
+            pipeline, known_args.start_date, known_args.split_date)
+
+        _ = (znorm_stats_p |
+             "Combine znorm Stats" >> beam.CombineGlobally(CombineZnormStats()) |
+             "Map znorm stats to json" >> beam.Map(lambda d: json.dumps(d)) |
+             "Dump znorm stats to file" >> beam.io.WriteToText(os.path.join(
+                 known_args.temp_dir, 'znorm_stats.json'), shard_name_template='')
+             )
+
     community_area_list = open(os.path.join(known_args.temp_dir,
                                             'community_area_list.json')).read().strip().split(',')
+
+    znorm_stats = json.load(open(os.path.join(known_args.temp_dir,
+                                              'znorm_stats.json')))
 
     # Preprocess dataset
     with beam.Pipeline(options=pipeline_options) as pipeline:
         with impl.Context(known_args.temp_dir):
 
             # Process training data
-            raw_data_train = read_from_bq(
+            raw_data_train = read_data_from_bq(
                 pipeline, known_args.start_date, known_args.split_date)
 
             # _ = raw_data_train | "Print raw_data_train" >> beam.Map(print)
@@ -314,41 +463,38 @@ if __name__ == '__main__':
             ts_windows_train = (orders_by_date_train | "Extract timeseries windows - train" >>
                                 beam.ParDo(ExtractRawTimeseriesWindow(known_args.window_size)))
 
-            # _  = ts_windows_train | "Print ts_windows_train" >> beam.Map(print)
+            # _ = ts_windows_train | "Print ts_windows_train" >> beam.Map(print)
 
-            # ts_windows_schema = create_ts_metadata(
-            #     community_area_list, known_args.window_size, known_args.steps_to_forecast)
-            # norm_ts_windows_train, transform_fn = ((ts_windows_train, ts_windows_schema) |
-            #                                        "Analyze and Transform - train" >> impl.AnalyzeAndTransformDataset(preprocess_fn))
-            # norm_ts_windows_train_data, norm_ts_windows_train_metadata = norm_ts_windows_train
+            ts_windows_schema = create_ts_metadata(known_args.window_size)
+            norm_ts_windows_train, transform_fn = ((ts_windows_train, ts_windows_schema) |
+                                                   "Analyze and Transform - train" >> impl.AnalyzeAndTransformDataset(lambda t: preprocess_fn(t,
+                                                                                                                                              znorm_stats)))
+            norm_ts_windows_train_data, norm_ts_windows_train_metadata = norm_ts_windows_train
 
-            # _ = norm_ts_windows_train_data | 'Write TFrecords - train' >> beam.io.tfrecordio.WriteToTFRecord(
-            #     file_path_prefix=os.path.join(
-            #         known_args.tfrecord_dir, 'train'),
-            #     file_name_suffix=".tfrecords",
-            #     coder=example_proto_coder.ExampleProtoCoder(norm_ts_windows_train_metadata.schema))
+            _ = norm_ts_windows_train_data | 'Write TFrecords - train' >> beam.io.tfrecordio.WriteToTFRecord(
+                file_path_prefix=os.path.join(
+                    known_args.tfrecord_dir, 'train'),
+                file_name_suffix=".tfrecords",
+                coder=example_proto_coder.ExampleProtoCoder(norm_ts_windows_train_metadata.schema))
 
-            # # Process evaluation data
-            # raw_data_eval = read_from_bq(
-            #     pipeline, known_args.store_number, community_area_list, known_args.split_date,  known_args.end_date)
+            # Process evaluation data
+            raw_data_eval = read_data_from_bq(                
+                pipeline, known_args.split_date,  known_args.end_date)
 
-            # orders_by_date_eval = (raw_data_eval |
-            #                        "Merge SKUs - eval" >> beam.CombineGlobally(GroupItemsByDate(community_area_list, (split_datetime, end_datetime))))
+            orders_by_date_eval = (raw_data_eval |
+                                   "Merge SKUs - eval" >> beam.CombineGlobally(GroupItemsByDate(community_area_list, (split_datetime, end_datetime))))
 
-            # ts_windows_eval = (orders_by_date_eval | "Extract timeseries windows - eval" >>
-            #                    beam.ParDo(ExtractRawTimeseriesWindow(community_area_list,
-            #                                                          known_args.window_size,
-            #                                                          known_args.steps_to_forecast,
-            #                                                          known_args.window_offset)))
+            ts_windows_eval = (orders_by_date_eval | "Extract timeseries windows - eval" >>
+                               beam.ParDo(ExtractRawTimeseriesWindow(known_args.window_size)))
 
-            # norm_ts_windows_eval = (((ts_windows_eval, ts_windows_schema), transform_fn) |
-            #                         "Transform - eval" >> impl.TransformDataset())
-            # norm_ts_windows_eval_data, norm_ts_windows_eval_metadata = norm_ts_windows_eval
+            norm_ts_windows_eval = (((ts_windows_eval, ts_windows_schema), transform_fn) |
+                                    "Transform - eval" >> impl.TransformDataset())
+            norm_ts_windows_eval_data, norm_ts_windows_eval_metadata = norm_ts_windows_eval
 
-            # _ = norm_ts_windows_eval_data | 'Write TFrecords - eval' >> beam.io.tfrecordio.WriteToTFRecord(
-            #     file_path_prefix=os.path.join(known_args.tfrecord_dir, 'eval'),
-            #     file_name_suffix=".tfrecords",
-            #     coder=example_proto_coder.ExampleProtoCoder(norm_ts_windows_eval_metadata.schema))
+            _ = norm_ts_windows_eval_data | 'Write TFrecords - eval' >> beam.io.tfrecordio.WriteToTFRecord(
+                file_path_prefix=os.path.join(known_args.tfrecord_dir, 'eval'),
+                file_name_suffix=".tfrecords",
+                coder=example_proto_coder.ExampleProtoCoder(norm_ts_windows_eval_metadata.schema))
 
-            # _ = transform_fn | 'Dump Transform Function Graph' >> transform_fn_io.WriteTransformFn(
-            #     known_args.tfx_artifacts_dir)
+            _ = transform_fn | 'Dump Transform Function Graph' >> transform_fn_io.WriteTransformFn(
+                known_args.tfx_artifacts_dir)
