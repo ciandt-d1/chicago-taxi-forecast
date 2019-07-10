@@ -1,4 +1,4 @@
-FROM tensorflow/tensorflow:1.13.1-py3
+FROM tensorflow/tensorflow:1.14.0-py3
 
 # General dependencies
 RUN apt-get update && apt-get install -y
