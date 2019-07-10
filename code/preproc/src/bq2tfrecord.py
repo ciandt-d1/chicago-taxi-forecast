@@ -350,16 +350,17 @@ def preprocess_fn(features, znorm_stats):
         tf.lookup.KeyValueTensorInitializer(keys=znorm_stats['pickup_community_area'],
                                             values=znorm_stats['std']),
         default_value=1)
-
-    # apply znorm
+    
     znorm_tensor_mean = lookup_mean.lookup(
         keys=features['community_area_code'])
     znorm_tensor_std = lookup_std.lookup(keys=features['community_area_code'])
 
+    # force shape
     znorm_tensor_mean = tf.reshape(znorm_tensor_mean, [-1, 1])
     znorm_tensor_std = tf.reshape(znorm_tensor_std, [-1, 1])
-    target = tf.reshape(features['target'], [-1, 1])    
-    
+    target = tf.reshape(features['target'], [-1, 1])
+
+    # normalize
     output_features['n_trips'] = tf.math.divide(
         tf.math.subtract(features['n_trips'], znorm_tensor_mean), znorm_tensor_std)
     output_features['target'] = tf.math.divide(
@@ -450,20 +451,13 @@ if __name__ == '__main__':
 
             # Process training data
             raw_data_train = read_data_from_bq(
-                pipeline, known_args.start_date, known_args.split_date)
-
-            # _ = raw_data_train | "Print raw_data_train" >> beam.Map(print)
+                pipeline, known_args.start_date, known_args.split_date)            
 
             orders_by_date_train = (raw_data_train |
                                     "Merge - train" >> beam.CombineGlobally(GroupItemsByDate(community_area_list, (start_datetime, split_datetime))))
-
-            # _ = orders_by_date_train | "Print orders_by_date_train" >> beam.Map(
-            #     print)
-
+            
             ts_windows_train = (orders_by_date_train | "Extract timeseries windows - train" >>
-                                beam.ParDo(ExtractRawTimeseriesWindow(known_args.window_size)))
-
-            # _ = ts_windows_train | "Print ts_windows_train" >> beam.Map(print)
+                                beam.ParDo(ExtractRawTimeseriesWindow(known_args.window_size)))            
 
             ts_windows_schema = create_ts_metadata(known_args.window_size)
             norm_ts_windows_train, transform_fn = ((ts_windows_train, ts_windows_schema) |
@@ -478,7 +472,7 @@ if __name__ == '__main__':
                 coder=example_proto_coder.ExampleProtoCoder(norm_ts_windows_train_metadata.schema))
 
             # Process evaluation data
-            raw_data_eval = read_data_from_bq(                
+            raw_data_eval = read_data_from_bq(
                 pipeline, known_args.split_date,  known_args.end_date)
 
             orders_by_date_eval = (raw_data_eval |
@@ -495,6 +489,8 @@ if __name__ == '__main__':
                 file_path_prefix=os.path.join(known_args.tfrecord_dir, 'eval'),
                 file_name_suffix=".tfrecords",
                 coder=example_proto_coder.ExampleProtoCoder(norm_ts_windows_eval_metadata.schema))
+
+            # Dump transformation graph
 
             _ = transform_fn | 'Dump Transform Function Graph' >> transform_fn_io.WriteTransformFn(
                 known_args.tfx_artifacts_dir)
