@@ -339,6 +339,7 @@ def preprocess_fn(features, window_size, znorm_stats):
         features['month'], 13)
 
     output_features['community_area'] = features['community_area']
+    output_features['community_area_code'] = features['community_area_code']
 
     # convert znorm statistics into tensor lookup table
     lookup_mean = tf.lookup.StaticHashTable(
@@ -382,7 +383,7 @@ def preprocess_fn(features, window_size, znorm_stats):
     return output_features
 
 
-def create_ts_metadata(window_size):
+def get_feature_spec(window_size):
 
     schema_dict = {
         'hour': tf.FixedLenFeature(shape=[window_size], dtype=tf.int64, default_value=None),
@@ -477,7 +478,7 @@ if __name__ == '__main__':
 
             # _ = ts_windows_train | "print ts_windows_train" >> beam.Map(print)
 
-            ts_windows_schema = create_ts_metadata(known_args.window_size)
+            ts_windows_schema = get_feature_spec(known_args.window_size)
             norm_ts_windows_train, transform_fn = ((ts_windows_train, ts_windows_schema) |
                                                    "Analyze and Transform - train" >> impl.AnalyzeAndTransformDataset(lambda t: preprocess_fn(t,
                                                                                                                                               known_args.window_size,
