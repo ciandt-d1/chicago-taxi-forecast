@@ -20,7 +20,8 @@ from tensorflow_transform.tf_metadata import dataset_schema
 from tensorflow_transform.tf_metadata import dataset_metadata
 from tensorflow_transform.coders import example_proto_coder
 from tensorflow_transform.tf_metadata import metadata_io
-from tensorflow_transform.beam.tft_beam_io import transform_fn_io
+from tensorflow_transform.beam.tft_beam_io import transform_fn_io, beam_metadata_io
+
 
 try:
     try:
@@ -352,22 +353,22 @@ def preprocess_fn(features, window_size, znorm_stats):
                                             values=znorm_stats['std'],
                                             key_dtype=tf.int64,
                                             value_dtype=tf.float32),
-        default_value = 1)
+        default_value=1)
 
-    znorm_tensor_mean=lookup_mean.lookup(
-        keys = features['community_area_code'])
-    znorm_tensor_std=lookup_std.lookup(keys = features['community_area_code'])
+    znorm_tensor_mean = lookup_mean.lookup(
+        keys=features['community_area_code'])
+    znorm_tensor_std = lookup_std.lookup(keys=features['community_area_code'])
 
     # force shape
-    znorm_tensor_mean=tf.reshape(znorm_tensor_mean, [-1, 1])
-    znorm_tensor_std=tf.reshape(znorm_tensor_std, [-1, 1])
-    target=tf.reshape(features['target'], [-1, 1])
+    znorm_tensor_mean = tf.reshape(znorm_tensor_mean, [-1, 1])
+    znorm_tensor_std = tf.reshape(znorm_tensor_std, [-1, 1])
+    target = tf.reshape(features['target'], [-1, 1])
 
     # normalize
-    output_features['n_trips']=tf.math.divide(
+    output_features['n_trips'] = tf.math.divide(
         tf.math.subtract(features['n_trips'], znorm_tensor_mean), znorm_tensor_std)
-    output_features['target']=tf.math.divide(
-        tf.math.subtract(target, znorm_tensor_mean), znorm_tensor_std)    
+    output_features['target'] = tf.math.divide(
+        tf.math.subtract(target, znorm_tensor_mean), znorm_tensor_std)
 
     # reshape
     for k in ['hour_sin', 'hour_cos', 'day_of_week_sin',
@@ -457,7 +458,7 @@ if __name__ == '__main__':
     znorm_stats = json.load(open(os.path.join(known_args.tfx_artifacts_dir,
                                               'znorm_stats.json')))
 
-    # Add some epsilon to avoid division by zero    
+    # Add some epsilon to avoid division by zero
     # znorm_stats['std'] = [i+1 for i in znorm_stats['std']]
 
     # Preprocess dataset
@@ -509,6 +510,5 @@ if __name__ == '__main__':
                 coder=example_proto_coder.ExampleProtoCoder(norm_ts_windows_eval_metadata.schema))
 
             # Dump transformation graph
-
             _ = transform_fn | 'Dump Transform Function Graph' >> transform_fn_io.WriteTransformFn(
-                known_args.tfx_artifacts_dir)
+                known_args.tfx_artifacts_dir)            
