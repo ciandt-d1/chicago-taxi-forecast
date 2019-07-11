@@ -30,7 +30,6 @@ try:
 except ImportError:
     from apache_beam.utils.options import PipelineOptions
 
-
 import logging
 logging.basicConfig()
 logger = logging.getLogger(__name__)
@@ -54,8 +53,9 @@ def query_trips(start_date, end_date):
                 WHERE trip_start_timestamp >= '{start_date}'
                 AND trip_start_timestamp <'{end_date}'
                 AND pickup_community_area is NOT NULL
+                AND trip_start_timestamp is NOT NULL
         GROUP BY date, hour, pickup_community_area
-        ORDER BY date, hour, pickup_community_area ASC        
+        ORDER BY date, hour, pickup_community_area ASC
     """.format(start_date=start_date, end_date=end_date)
     # LIMIT 10
 
@@ -64,7 +64,7 @@ def query_trips(start_date, end_date):
 
 def query_znorm_stats(start_date, end_date):
     query_str = """
-        SELECT pickup_community_area, AVG(n_trips) mean, STDDEV(n_trips) std FROM
+        SELECT pickup_community_area, AVG(n_trips) mean, STDDEV(n_trips)+1 std FROM
             (SELECT
                 pickup_community_area,
                 EXTRACT(DATE from trip_start_timestamp) as date,
@@ -282,9 +282,8 @@ class ExtractRawTimeseriesWindow(beam.DoFn):
                 for k in window_dict:
                     window_dict[k] = window[k].values[:self.window_size]
 
-                window_dict['community_area'] = [str(ca)] * \
-                    self.window_size  # Add community area
-                window_dict['community_area_code'] = str(ca)
+                window_dict['community_area'] = [int(ca)] * self.window_size
+                window_dict['community_area_code'] = int(ca)
 
                 # Add target
                 window_dict['target'] = window['n_trips'].values[self.window_size].astype(
@@ -313,58 +312,71 @@ def process_temporal_features_cos(value, period):
     return value_cos
 
 
-def preprocess_fn(features, znorm_stats):
+def preprocess_fn(features, window_size, znorm_stats):
 
     output_features = {}
 
     output_features['hour_sin'] = process_temporal_features_sin(
-        features['hour'], 24)
+        features['hour'], 25)
     output_features['hour_cos'] = process_temporal_features_cos(
-        features['hour'], 24)
+        features['hour'], 25)
     output_features['day_of_week_sin'] = process_temporal_features_sin(
-        features['day_of_week'], 7)
+        features['day_of_week'], 8)
     output_features['day_of_week_cos'] = process_temporal_features_cos(
-        features['day_of_week'], 7)
+        features['day_of_week'], 8)
     output_features['day_of_month_sin'] = process_temporal_features_sin(
-        features['day_of_month'], 31)
+        features['day_of_month'], 32)
     output_features['day_of_month_cos'] = process_temporal_features_cos(
-        features['day_of_month'], 31)
+        features['day_of_month'], 32)
     output_features['week_number_sin'] = process_temporal_features_sin(
-        features['week_number'], 54)
+        features['week_number'], 55)
     output_features['week_number_cos'] = process_temporal_features_cos(
-        features['week_number'], 54)
+        features['week_number'], 55)
     output_features['month_sin'] = process_temporal_features_sin(
-        features['month'], 12)
+        features['month'], 13)
     output_features['month_cos'] = process_temporal_features_cos(
-        features['month'], 12)
+        features['month'], 13)
 
     output_features['community_area'] = features['community_area']
 
     # convert znorm statistics into tensor lookup table
     lookup_mean = tf.lookup.StaticHashTable(
-        tf.lookup.KeyValueTensorInitializer(keys=znorm_stats['pickup_community_area'],
-                                            values=znorm_stats['mean']),
+        tf.lookup.KeyValueTensorInitializer(keys=[np.int64(int(i)) for i in znorm_stats['pickup_community_area']],
+                                            values=znorm_stats['mean'],
+                                            key_dtype=tf.int64,
+                                            value_dtype=tf.float32),
         default_value=0)
 
     lookup_std = tf.lookup.StaticHashTable(
-        tf.lookup.KeyValueTensorInitializer(keys=znorm_stats['pickup_community_area'],
-                                            values=znorm_stats['std']),
-        default_value=1)
-    
-    znorm_tensor_mean = lookup_mean.lookup(
-        keys=features['community_area_code'])
-    znorm_tensor_std = lookup_std.lookup(keys=features['community_area_code'])
+        tf.lookup.KeyValueTensorInitializer(keys=[np.int64(int(i)) for i in znorm_stats['pickup_community_area']],
+                                            values=znorm_stats['std'],
+                                            key_dtype=tf.int64,
+                                            value_dtype=tf.float32),
+        default_value = 1)
+
+    znorm_tensor_mean=lookup_mean.lookup(
+        keys = features['community_area_code'])
+    znorm_tensor_std=lookup_std.lookup(keys = features['community_area_code'])
 
     # force shape
-    znorm_tensor_mean = tf.reshape(znorm_tensor_mean, [-1, 1])
-    znorm_tensor_std = tf.reshape(znorm_tensor_std, [-1, 1])
-    target = tf.reshape(features['target'], [-1, 1])
+    znorm_tensor_mean=tf.reshape(znorm_tensor_mean, [-1, 1])
+    znorm_tensor_std=tf.reshape(znorm_tensor_std, [-1, 1])
+    target=tf.reshape(features['target'], [-1, 1])
 
     # normalize
-    output_features['n_trips'] = tf.math.divide(
+    output_features['n_trips']=tf.math.divide(
         tf.math.subtract(features['n_trips'], znorm_tensor_mean), znorm_tensor_std)
-    output_features['target'] = tf.math.divide(
-        tf.math.subtract(target, znorm_tensor_mean), znorm_tensor_std)
+    output_features['target']=tf.math.divide(
+        tf.math.subtract(target, znorm_tensor_mean), znorm_tensor_std)    
+
+    # reshape
+    for k in ['hour_sin', 'hour_cos', 'day_of_week_sin',
+              'day_of_week_cos', 'day_of_month_sin', 'day_of_month_cos',
+              'week_number_sin', 'week_number_cos',
+              'month_sin', 'month_cos', 'n_trips']:
+
+        output_features[k] = tf.reshape(
+            output_features[k], [-1, window_size, 1])
 
     return output_features
 
@@ -377,9 +389,9 @@ def create_ts_metadata(window_size):
         'day_of_month': tf.FixedLenFeature(shape=[window_size], dtype=tf.int64, default_value=None),
         'week_number': tf.FixedLenFeature(shape=[window_size], dtype=tf.int64, default_value=None),
         'month': tf.FixedLenFeature(shape=[window_size], dtype=tf.int64, default_value=None),
-        'community_area': tf.FixedLenFeature(shape=[window_size], dtype=tf.string, default_value=None),
-        'community_area_code': tf.FixedLenFeature(shape=[], dtype=tf.string, default_value=None),
+        'community_area': tf.FixedLenFeature(shape=[window_size], dtype=tf.int64, default_value=None),
         'n_trips': tf.FixedLenFeature(shape=[window_size], dtype=tf.float32, default_value=None),
+        'community_area_code': tf.FixedLenFeature(shape=[], dtype=tf.int64, default_value=None),
         'target': tf.FixedLenFeature(shape=[], dtype=tf.float32, default_value=None)
     }
 
@@ -396,7 +408,7 @@ if __name__ == '__main__':
                         dest='tfx_artifacts_dir', required=True)
     parser.add_argument('--project', dest='project', required=True)
     parser.add_argument('--window-size', dest='window_size',
-                        type=int, required=False, default=7)
+                        type=int, required=False, default=24)
     parser.add_argument('--start-date', dest='start_date', required=True)
     parser.add_argument('--end-date', dest='end_date', required=True)
     parser.add_argument('--split-date', dest='split_date', required=True)
@@ -425,7 +437,7 @@ if __name__ == '__main__':
                                  'Combine list' >> beam.CombineGlobally(CombineCommunityArea()) |
                                  'Map to string' >> beam.Map(lambda l: ','.join(l)) |
                                  'Dump to text' >> beam.io.WriteToText(os.path.join(
-                                     known_args.temp_dir, 'community_area_list.json'), shard_name_template='')
+                                     known_args.tfx_artifacts_dir, 'community_area_list.json'), shard_name_template='')
                                  )
 
         # Query znorm statistics
@@ -436,14 +448,17 @@ if __name__ == '__main__':
              "Combine znorm Stats" >> beam.CombineGlobally(CombineZnormStats()) |
              "Map znorm stats to json" >> beam.Map(lambda d: json.dumps(d)) |
              "Dump znorm stats to file" >> beam.io.WriteToText(os.path.join(
-                 known_args.temp_dir, 'znorm_stats.json'), shard_name_template='')
+                 known_args.tfx_artifacts_dir, 'znorm_stats.json'), shard_name_template='')
              )
 
-    community_area_list = open(os.path.join(known_args.temp_dir,
+    community_area_list = open(os.path.join(known_args.tfx_artifacts_dir,
                                             'community_area_list.json')).read().strip().split(',')
 
-    znorm_stats = json.load(open(os.path.join(known_args.temp_dir,
+    znorm_stats = json.load(open(os.path.join(known_args.tfx_artifacts_dir,
                                               'znorm_stats.json')))
+
+    # Add some epsilon to avoid division by zero    
+    # znorm_stats['std'] = [i+1 for i in znorm_stats['std']]
 
     # Preprocess dataset
     with beam.Pipeline(options=pipeline_options) as pipeline:
@@ -451,17 +466,20 @@ if __name__ == '__main__':
 
             # Process training data
             raw_data_train = read_data_from_bq(
-                pipeline, known_args.start_date, known_args.split_date)            
+                pipeline, known_args.start_date, known_args.split_date)
 
             orders_by_date_train = (raw_data_train |
                                     "Merge - train" >> beam.CombineGlobally(GroupItemsByDate(community_area_list, (start_datetime, split_datetime))))
-            
+
             ts_windows_train = (orders_by_date_train | "Extract timeseries windows - train" >>
-                                beam.ParDo(ExtractRawTimeseriesWindow(known_args.window_size)))            
+                                beam.ParDo(ExtractRawTimeseriesWindow(known_args.window_size)))
+
+            # _ = ts_windows_train | "print ts_windows_train" >> beam.Map(print)
 
             ts_windows_schema = create_ts_metadata(known_args.window_size)
             norm_ts_windows_train, transform_fn = ((ts_windows_train, ts_windows_schema) |
                                                    "Analyze and Transform - train" >> impl.AnalyzeAndTransformDataset(lambda t: preprocess_fn(t,
+                                                                                                                                              known_args.window_size,
                                                                                                                                               znorm_stats)))
             norm_ts_windows_train_data, norm_ts_windows_train_metadata = norm_ts_windows_train
 
