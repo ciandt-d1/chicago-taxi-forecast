@@ -7,3 +7,4 @@ tqdm
 tensorflow-transform==0.13.0
 tensorflow-data-validation==0.13.1
 apache-beam[gcp]==2.11.0
+matplotlib
