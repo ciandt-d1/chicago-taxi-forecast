@@ -17,15 +17,18 @@ docker build ./ -t ${DOCKER_IMAGE_NAME} -f ./Dockerfile
 
 ### Test locally
 
+Define a local directory to read/write pipeline artifacts
+
 ```
-docker run -it -v ${PWD}/src:/src --rm  ${DOCKER_IMAGE_NAME} bash
+ARTIFACTS_DIR=/home/CIT/rodrigofp/Projects/Specialization2019/demo_taxi/assets
+docker run -it -v ${PWD}/src:/src -v ${ARTIFACTS_DIR}:/artifacts_dir --rm  ${DOCKER_IMAGE_NAME} bash
 ```
 
 Run container
 ```
 python3 bq2tfrecord.py \
---tfrecord-dir /tmp \
---tfx-artifacts-dir /tmp \
+--tfrecord-dir /artifacts_dir \
+--tfx-artifacts-dir /artifacts_dir \
 --project ciandt-cognitive-sandbox \
 --window-size 6 \
 --start-date 2019-04-10 \
