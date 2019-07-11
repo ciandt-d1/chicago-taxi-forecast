@@ -61,6 +61,45 @@ def input_fn(tfrecords_path,
     return dataset
 
 
+def get_feature_spec(window_size):
+
+    feature_spec = {
+        'hour': tf.FixedLenFeature(shape=[window_size], dtype=tf.int64, default_value=None),
+        'day_of_week': tf.FixedLenFeature(shape=[window_size], dtype=tf.int64, default_value=None),
+        'day_of_month': tf.FixedLenFeature(shape=[window_size], dtype=tf.int64, default_value=None),
+        'week_number': tf.FixedLenFeature(shape=[window_size], dtype=tf.int64, default_value=None),
+        'month': tf.FixedLenFeature(shape=[window_size], dtype=tf.int64, default_value=None),
+        'community_area': tf.FixedLenFeature(shape=[window_size], dtype=tf.int64, default_value=None),
+        'n_trips': tf.FixedLenFeature(shape=[window_size], dtype=tf.float32, default_value=None),
+        'community_area_code': tf.FixedLenFeature(shape=[], dtype=tf.int64, default_value=None),
+    }
+
+    return feature_spec
+
+
+def serving_input_receiver_fn(tft_metadata, window_size):
+
+    raw_feature_spec = get_feature_spec(window_size)
+
+    def _serving_input_receiver_fn():
+
+        raw_input_fn = tf.estimator.export.build_parsing_serving_input_receiver_fn(
+            raw_feature_spec, default_batch_size=None)
+        serving_input_receiver = raw_input_fn()
+
+        raw_features = serving_input_receiver.features
+        transformed_features = tft_metadata.transform_raw_features(
+            raw_features)
+
+        # remove target tensor
+        transformed_features.pop('target')
+
+        return tf.estimator.export.ServingInputReceiver(
+            transformed_features, serving_input_receiver.receiver_tensors)
+
+    return _serving_input_receiver_fn
+
+
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
@@ -178,6 +217,18 @@ if __name__ == '__main__':
         model_estimator = tf.keras.estimator.model_to_estimator(keras_model=model,
                                                                 config=run_config)
 
+        logger.info('Train')
         tf.estimator.train_and_evaluate(estimator=model_estimator,
                                         train_spec=train_spec,
                                         eval_spec=eval_spec)
+
+        # export saved model
+        export_dir = os.path.join(output_dir, 'export')
+        if tf.gfile.Exists(export_dir):
+            tf.gfile.DeleteRecursively(export_dir)
+
+        model_estimator.export_savedmodel(
+            export_dir_base=export_dir,
+            serving_input_receiver_fn=serving_input_receiver_fn(tft_metadata,
+                                                                args.window_size)
+        )
