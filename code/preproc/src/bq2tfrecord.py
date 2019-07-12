@@ -339,7 +339,7 @@ def preprocess_fn(features, window_size, znorm_stats):
         features['month'], 13)
 
     output_features['community_area'] = features['community_area']
-    output_features['community_area_code'] = features['community_area_code']
+    # output_features['community_area_code'] = features['community_area_code']
 
     # convert znorm statistics into tensor lookup table
     lookup_mean = tf.lookup.StaticHashTable(
