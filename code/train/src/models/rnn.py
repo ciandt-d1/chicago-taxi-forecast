@@ -66,7 +66,8 @@ def rnn_v1(window_size, n_areas=77):
 
     concat = tf.keras.layers.concatenate(tensors_to_concat, axis=-1)
 
-    net = tf.keras.layers.CuDNNGRU(16, return_sequences=False)(concat)
+    # net = tf.keras.layers.CuDNNGRU(16, return_sequences=False)(concat)
+    net = tf.keras.layers.GRU(16, return_sequences=False)(concat)
 
     net = tf.keras.layers.Dropout(0.1)(net)
 
