@@ -52,7 +52,6 @@ python3 train.py \
 --batch-size ${BATCH_SIZE} \
 --output-dir ${OUTPUT_DIR} \
 --gpu-memory-fraction ${GPU_MEM_USAGE}
-
 ```
 
 ### Run on Google Cloud ML Engine

@@ -87,7 +87,11 @@ def serving_input_receiver_fn(tft_metadata, window_size):
             raw_feature_spec, default_batch_size=None)
         serving_input_receiver = raw_input_fn()
 
-        raw_features = serving_input_receiver.features
+        # In order to work on CMLE, it is expected the input tensor to be encoded as base64
+        decoded_example = tf.io.decode_base64(
+            serving_input_receiver.receiver_tensors['examples'])
+        raw_features = tf.io.parse_example(decoded_example, raw_feature_spec)
+
         transformed_features = tft_metadata.transform_raw_features(
             raw_features)
 
