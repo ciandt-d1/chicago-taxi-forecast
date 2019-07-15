@@ -7,7 +7,7 @@ RUN apt-get install --no-install-recommends -y -q ca-certificates python-dev pyt
 
 RUN easy_install pip
 
-RUN pip install tensorflow==1.10
+RUN pip install tensorflow==1.13.1
 RUN pip install pyyaml==3.12 six==1.11.0
 
 RUN wget -nv https://dl.google.com/dl/cloudsdk/release/google-cloud-sdk.zip && \
@@ -25,9 +25,16 @@ RUN wget -nv https://dl.google.com/dl/cloudsdk/release/google-cloud-sdk.zip && \
 
 ENV PATH $PATH:/tools/node/bin:/tools/google-cloud-sdk/bin
 
+COPY requirements.txt /assets/requirements.txt
+RUN pip install -r /assets/requirements.txt
+
 WORKDIR /app
+
+COPY src /app
+
 
 COPY service_account.json /assets/service_account.json
 ENV GOOGLE_APPLICATION_CREDENTIALS=/assets/service_account.json
 
-COPY src /app
+RUN gcloud config set account chicago-taxi-forecast2 && \
+    gcloud auth activate-service-account --key-file /assets/service_account.json
