@@ -33,28 +33,7 @@ def main(argv=None):
         default='us-central1'
     )
 
-    args = parser.parse_args()
-
-    # # Make sure the model dir exists before proceeding, as sometimes it takes a few seconds to become
-    # # available after training completes.
-    # retries = 0
-    # sleeptime = 5
-    # while retries < 20:
-    #     try:
-    #         model_location = os.path.join(
-    #             args.gcs_path, file_io.list_directory(args.gcs_path)[-1])
-    #         print("model location: %s" % model_location)
-    #         break
-    #     except Exception as e:
-    #         print(e)
-    #         print("Sleeping %s seconds to wait for GCS files..." % sleeptime)
-    #         time.sleep(sleeptime)
-    #         retries += 1
-    #         sleeptime *= 2
-    # if retries >= 20:
-    #     print("could not get model location subdir from %s, exiting" %
-    #           args.gcs_path)
-    #     exit(1)
+    args = parser.parse_args()    
 
     # Check if the model already exists
     model_describe_command = ['gcloud', 'ai-platform', 'models',

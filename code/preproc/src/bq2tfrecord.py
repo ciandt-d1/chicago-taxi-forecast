@@ -342,19 +342,36 @@ def preprocess_fn(features, window_size, znorm_stats):
     # output_features['community_area_code'] = features['community_area_code']
 
     # convert znorm statistics into tensor lookup table
-    lookup_mean = tf.lookup.StaticHashTable(
-        tf.lookup.KeyValueTensorInitializer(keys=[np.int64(int(i)) for i in znorm_stats['pickup_community_area']],
+    # (TENSORFLOW 1.14)
+    # lookup_mean = tf.lookup.StaticHashTable(
+    #     tf.lookup.KeyValueTensorInitializer(keys=[np.int64(int(i)) for i in znorm_stats['pickup_community_area']],
+    #                                         values=znorm_stats['mean'],
+    #                                         key_dtype=tf.int64,
+    #                                         value_dtype=tf.float32),
+    #     default_value=0)
+
+    # lookup_std = tf.lookup.StaticHashTable(
+    #     tf.lookup.KeyValueTensorInitializer(keys=[np.int64(int(i)) for i in znorm_stats['pickup_community_area']],
+    #                                         values=znorm_stats['std'],
+    #                                         key_dtype=tf.int64,
+    #                                         value_dtype=tf.float32),
+    #     default_value=1)
+
+    # (TENSORFLOW 1.13.1)
+    lookup_mean = tf.contrib.lookup.HashTable(
+        tf.contrib.lookup.KeyValueTensorInitializer(keys=[np.int64(int(i)) for i in znorm_stats['pickup_community_area']],
                                             values=znorm_stats['mean'],
                                             key_dtype=tf.int64,
                                             value_dtype=tf.float32),
         default_value=0)
 
-    lookup_std = tf.lookup.StaticHashTable(
-        tf.lookup.KeyValueTensorInitializer(keys=[np.int64(int(i)) for i in znorm_stats['pickup_community_area']],
+    lookup_std = tf.contrib.lookup.HashTable(
+        tf.contrib.lookup.KeyValueTensorInitializer(keys=[np.int64(int(i)) for i in znorm_stats['pickup_community_area']],
                                             values=znorm_stats['std'],
                                             key_dtype=tf.int64,
                                             value_dtype=tf.float32),
         default_value=1)
+
 
     znorm_tensor_mean = lookup_mean.lookup(
         keys=features['community_area_code'])
