@@ -13,27 +13,10 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 
-def predict_json(project, model, service, instances):
-    """Send json data to a deployed model for prediction.
-
-    Args:
-        project (str): project where the Cloud ML Engine Model is deployed.
-        model (str): model name.
-        instances ([Mapping[str: Any]]): Keys should be the names of Tensors
-            your deployed model expects as inputs. Values should be datatypes
-            convertible to Tensors, or (potentially nested) lists of datatypes
-            convertible to tensors.        
-    Returns:
-        Mapping[str: any]: dictionary of prediction results defined by the
-            model.
-    """
-    # Create the ML Engine service object.
-    # To authenticate set the environment variable
-    # GOOGLE_APPLICATION_CREDENTIALS=<path_to_service_account_file>
-    name = 'projects/{}/models/{}'.format(project, model)
+def make_prediction(model_url, service, instances):
 
     response = service.projects().predict(
-        name=name,
+        name=model_url,
         body={'instances': instances}
     ).execute()
 
@@ -69,22 +52,24 @@ if __name__ == '__main__':
     })).SerializeToString()
 
     example = base64.urlsafe_b64encode(example)
+    
 
     model_name = "chicago_taxi_forecast"
+    project = "ciandt-cognitive-sandbox"
 
+    model_url = 'projects/{}/models/{}'.format(project, model_name)
     service = googleapiclient.discovery.build(
         'ml', 'v1', cache_discovery=False)
 
     try:
-        predictions = predict_json(
-            "ciandt-cognitive-sandbox", "chicago_taxi_forecast", service, example)
+        predictions = make_prediction(model_url, service, example)
         logger.info("Prediction works: {}".format(predictions))
     except RuntimeError as e:
         logger.error("An error occurred: \n{}".format(e))
         sys.exit(1)
 
-    logger.info("Assessing optimal batch_size")    
-    batch_size_list = [128, 256, 512, 1024,2048]
+    logger.info("Assessing optimal batch_size")
+    batch_size_list = [128, 256, 512, 1024, 2048]
 
     n_predictions = 4096*14
 
@@ -94,8 +79,8 @@ if __name__ == '__main__':
             avg_time = 0
             for i in tqdm.tqdm(range(n_batches)):
                 start_time = time.time()
-                predictions = predict_json(
-                    "ciandt-cognitive-sandbox", "chicago_taxi_forecast", service, [example]*batch_size)
+                predictions = make_prediction(
+                    model_url, service, [example]*batch_size)
                 end_time = time.time()
                 avg_time += end_time - start_time
             avg_time /= n_batches
