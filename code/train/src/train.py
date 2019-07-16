@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 
-import logging
 import utils
 import models
 
@@ -21,6 +20,7 @@ N_CORES = multiprocessing.cpu_count()
 
 tf.logging.set_verbosity(tf.logging.INFO)
 
+import logging
 logging.basicConfig()
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)

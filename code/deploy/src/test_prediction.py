@@ -2,11 +2,18 @@
 
 import tensorflow as tf
 import base64
-
 import googleapiclient.discovery
+import sys
+import tqdm
+import time
+
+import logging
+logging.basicConfig()
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 
-def predict_json(project, model, instances):
+def predict_json(project, model, service, instances):
     """Send json data to a deployed model for prediction.
 
     Args:
@@ -23,9 +30,7 @@ def predict_json(project, model, instances):
     # Create the ML Engine service object.
     # To authenticate set the environment variable
     # GOOGLE_APPLICATION_CREDENTIALS=<path_to_service_account_file>
-    service = googleapiclient.discovery.build('ml', 'v1')
     name = 'projects/{}/models/{}'.format(project, model)
-
 
     response = service.projects().predict(
         name=name,
@@ -66,7 +71,37 @@ if __name__ == '__main__':
     example = base64.urlsafe_b64encode(example)
 
     model_name = "chicago_taxi_forecast"
-    
-    predictions = predict_json(
-        "ciandt-cognitive-sandbox", "chicago_taxi_forecast", example)
-    print(predictions)
+
+    service = googleapiclient.discovery.build(
+        'ml', 'v1', cache_discovery=False)
+
+    try:
+        predictions = predict_json(
+            "ciandt-cognitive-sandbox", "chicago_taxi_forecast", service, example)
+        logger.info("Prediction works: {}".format(predictions))
+    except RuntimeError as e:
+        logger.error("An error occurred: \n{}".format(e))
+        sys.exit(1)
+
+    logger.info("Assessing optimal batch_size")    
+    batch_size_list = [128, 256, 512, 1024,2048]
+
+    n_predictions = 4096*14
+
+    try:
+        for batch_size in batch_size_list:
+            n_batches = int(n_predictions // batch_size)
+            avg_time = 0
+            for i in tqdm.tqdm(range(n_batches)):
+                start_time = time.time()
+                predictions = predict_json(
+                    "ciandt-cognitive-sandbox", "chicago_taxi_forecast", service, [example]*batch_size)
+                end_time = time.time()
+                avg_time += end_time - start_time
+            avg_time /= n_batches
+            avg_time /= batch_size
+            logger.info("Batch size {} takes {}s to predict each tf.example".format(
+                batch_size, avg_time))
+    except RuntimeError as e:
+        logger.error("An error occurred: \n{}".format(e))
+        sys.exit(1)
