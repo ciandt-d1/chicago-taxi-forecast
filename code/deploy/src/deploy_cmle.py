@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+
 from tensorflow.python.lib.io import file_io
 import argparse
 import os
