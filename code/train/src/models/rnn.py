@@ -30,7 +30,7 @@ def rnn_v1(window_size, n_areas=77):
     community_area_embedding_size = math.ceil(math.pow(n_areas, 0.25)) + 1
 
     community_area_embedding = tf.keras.layers.Embedding(
-        input_dim=n_areas, output_dim=community_area_embedding_size, input_length=window_size)(community_area)
+        input_dim=n_areas+1, output_dim=community_area_embedding_size, input_length=window_size)(community_area)
 
     n_trips = tf.keras.Input(shape=[window_size, 1], name='n_trips')
 

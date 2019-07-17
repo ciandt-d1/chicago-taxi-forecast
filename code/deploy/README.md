@@ -27,7 +27,7 @@ docker run -it -v ${PWD}/src:/src -v ${ARTIFACTS_DIR}:/artifacts_dir --rm  ${DOC
 
 python deploy_cmle.py \
 --project ciandt-cognitive-sandbox \
---gcs-path gs://ciandt-cognitive-sandbox-ts-forecast-bucket/test/1563219082/ \
+--gcs-path gs://ciandt-cognitive-sandbox-ts-forecast-bucket/test/1563373565/ \
 --model-name chicago_taxi_forecast
 
 ```

@@ -26,14 +26,20 @@ docker run -it -v ${PWD}/src:/src -v ${ARTIFACTS_DIR}:/artifacts_dir --rm  ${DOC
 
 Run container
 ```
-python3 evaluate.py \
+python3 make_predictions.py \
 --model-name chicago_taxi_forecast \
 --project ciandt-cognitive-sandbox \
 --window-size 6 \
 --start-date 2019-04-20 \
 --end-date  2019-04-30 \
 --znorm-stats-json /artifacts_dir/znorm_stats.json \
---batch-size 512
+--batch-size 512 \
+--output-path /artifacts_dir/predictions.csv
+```
+
+```
+python3 evaluate.py \
+--prediction-csv /artifacts_dir/predictions.csv
 ```
 
 ### Upload container image to the GCP Conainer Registry
