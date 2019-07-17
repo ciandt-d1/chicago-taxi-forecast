@@ -4,3 +4,4 @@ pandas-gbq==0.10.0
 gcsfs
 matplotlib
 scikit-learn
+tqdm

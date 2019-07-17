@@ -10,7 +10,7 @@ export DEPLOYMENT_NAME=chicago-taxi-forecast
 export PROJECT=ciandt-cognitive-sandbox
 export GCP_SERVICE_ACC_JSON_PATH=ts-forecast-vm@ciandt-cognitive-sandbox.iam.gserviceaccount.com # to access google cloud storage
 export VERSION_TAG=latest
-export DOCKER_IMAGE_NAME=gcr.io/${PROJECT}/${DEPLOYMENT_NAME}-train:${VERSION_TAG}
+export DOCKER_IMAGE_NAME=gcr.io/${PROJECT}/${DEPLOYMENT_NAME}/train:${VERSION_TAG}
 
 docker build ./ -t ${DOCKER_IMAGE_NAME} -f ./Dockerfile
 ```
@@ -52,19 +52,6 @@ python3 train.py \
 --batch-size ${BATCH_SIZE} \
 --output-dir ${OUTPUT_DIR} \
 --gpu-memory-fraction ${GPU_MEM_USAGE}
-```
-
-### Run on Google Cloud ML Engine
-
-Build package
-
-```
-
-```
-
-Submit job
-```
-
 ```
 
 ### Upload container image to the GCP Conainer Registry
