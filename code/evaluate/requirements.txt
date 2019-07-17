@@ -1,4 +1,6 @@
 google-api-python-client
-# google-cloud-bigquery[pandas,pyarrow]==1.7.0
 pandas
 pandas-gbq==0.10.0
+gcsfs
+matplotlib
+scikit-learn
