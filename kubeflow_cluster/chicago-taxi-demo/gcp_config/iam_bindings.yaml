@@ -1,0 +1,29 @@
+bindings:
+- members:
+  - serviceAccount:chicago-taxi-demo-admin@ciandt-cognitive-sandbox.iam.gserviceaccount.com
+  roles:
+  - roles/source.admin
+  - roles/servicemanagement.admin
+  - roles/compute.networkAdmin
+- members:
+  - serviceAccount:chicago-taxi-demo-user@ciandt-cognitive-sandbox.iam.gserviceaccount.com
+  roles:
+  - roles/cloudbuild.builds.editor
+  - roles/viewer
+  - roles/source.admin
+  - roles/storage.admin
+  - roles/bigquery.admin
+  - roles/dataflow.admin
+  - roles/ml.admin
+  - roles/dataproc.editor
+  - roles/cloudsql.admin
+- members:
+  - serviceAccount:chicago-taxi-demo-vm@ciandt-cognitive-sandbox.iam.gserviceaccount.com
+  roles:
+  - roles/logging.logWriter
+  - roles/monitoring.metricWriter
+  - roles/storage.objectViewer
+- members:
+  - user:rodrigofp@ciandt.com
+  roles:
+  - roles/iap.httpsResourceAccessor

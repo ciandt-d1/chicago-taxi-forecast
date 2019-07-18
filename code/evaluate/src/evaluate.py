@@ -27,7 +27,7 @@ if __name__ == "__main__":
             'numberValue':  mse,
             'format': "RAW",
         }]
-    }
+    }    
 
     with open('/mlpipeline-metrics.json', 'w') as f:
         json.dump(metrics, f)

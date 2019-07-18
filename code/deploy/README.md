@@ -10,7 +10,6 @@ In any doubt, check the [official documentation](https://www.kubeflow.org/docs/g
 ```
 export DEPLOYMENT_NAME=chicago-taxi-forecast
 export PROJECT=ciandt-cognitive-sandbox
-export GCP_SERVICE_ACC_JSON_PATH=ts-forecast-vm@ciandt-cognitive-sandbox.iam.gserviceaccount.com # to access google cloud storage
 export VERSION_TAG=latest
 export DOCKER_IMAGE_NAME=gcr.io/${PROJECT}/${DEPLOYMENT_NAME}/deploy:${VERSION_TAG}
 

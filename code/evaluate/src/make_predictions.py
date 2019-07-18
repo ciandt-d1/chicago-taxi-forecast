@@ -82,7 +82,8 @@ if __name__ == "__main__":
         'ml', 'v1', cache_discovery=False)
 
     # Load community areas mean and std to reverse znorm
-    znorm_stats = json.load(open(args.znorm_stats_json, 'r'))
+    # znorm_stats = json.load(open(args.znorm_stats_json, 'r'))
+    znorm_stats = json.loads(args.znorm_stats_json)
     znorm_stats = {int(ca): {'mean': mean, 'std': std} for ca, mean, std in zip(
         znorm_stats['pickup_community_area'], znorm_stats['mean'], znorm_stats['std'])}
 
@@ -183,3 +184,6 @@ if __name__ == "__main__":
         r['target'] - znorm_stats[r['community_area']]['mean'])/znorm_stats[r['community_area']]['std'], axis=1)
     
     predictions_df.to_csv(args.output_path,index=False)
+
+    with open("/prediction_csv_path.txt", "w") as f:
+        f.write(args.output_path)
