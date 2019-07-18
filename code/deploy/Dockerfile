@@ -33,8 +33,8 @@ WORKDIR /app
 COPY src /app
 
 
-COPY service_account.json /assets/service_account.json
-ENV GOOGLE_APPLICATION_CREDENTIALS=/assets/service_account.json
+# COPY service_account.json /assets/service_account.json
+# ENV GOOGLE_APPLICATION_CREDENTIALS=/assets/service_account.json
 
-RUN gcloud config set account chicago-taxi-forecast2 && \
-    gcloud auth activate-service-account --key-file /assets/service_account.json
+# RUN gcloud config set account chicago-taxi-forecast2 && \
+#     gcloud auth activate-service-account --key-file /assets/service_account.json
