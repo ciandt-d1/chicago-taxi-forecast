@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 
+import logging
 import utils
 import models
 
@@ -7,6 +8,9 @@ import argparse
 import datetime
 import math
 import os
+import json
+import gc
+import sys
 
 import tensorflow as tf
 from tensorflow_transform.beam.tft_beam_io import transform_fn_io
@@ -14,13 +18,15 @@ from tensorflow_transform.tf_metadata import metadata_io
 from tensorflow_transform.tf_metadata import dataset_schema
 from tensorflow_transform.tf_metadata import dataset_metadata
 from tensorflow_transform import TFTransformOutput
+from tensorflow.python.lib.io import file_io
+
+from tensorflow.keras import backend as K
 
 import multiprocessing
 N_CORES = multiprocessing.cpu_count()
 
 tf.logging.set_verbosity(tf.logging.INFO)
 
-import logging
 logging.basicConfig()
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -141,6 +147,8 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
+    logger.info("args:\n{}".format(args))
+
     steps_per_epoch_train = int(
         math.ceil(args.n_windows_train / args.batch_size))
     logger.info('steps_per_epoch_train: {}'.format(steps_per_epoch_train))
@@ -158,6 +166,8 @@ if __name__ == '__main__':
     logger.info('Listing tfrecords ...')
     tfrecords_train_list = utils.list_tfrecords(args.tfrecord_file_train)
     tfrecords_eval_list = utils.list_tfrecords(args.tfrecord_file_eval)
+    logger.info("{} train tfrecords ".format(len(tfrecords_train_list)))
+    logger.info("{} eval tfrecords ".format(len(tfrecords_eval_list)))
     logger.info('Done!')
 
     config = tf.ConfigProto()
@@ -172,7 +182,7 @@ if __name__ == '__main__':
         model.compile(optimizer=tf.keras.optimizers.Adam(lr=5e-4),
                       loss='mse',
                       metrics=['mse'])
-        logger.info(model.summary())
+        # logger.info(model.summary())
         logger.info('Done!')
 
         # input_fn_train = input_fn(tfrecords_train_list,
@@ -212,8 +222,8 @@ if __name__ == '__main__':
 
         run_config = tf.estimator.RunConfig(
             model_dir=output_dir,
-            save_summary_steps=int(steps_per_epoch_train/5),
-            save_checkpoints_steps=int(steps_per_epoch_train/5),
+            save_summary_steps=100,
+            save_checkpoints_steps=100,
             keep_checkpoint_max=1
         )
 
@@ -231,8 +241,28 @@ if __name__ == '__main__':
         if tf.gfile.Exists(export_dir):
             tf.gfile.DeleteRecursively(export_dir)
 
-        model_estimator.export_savedmodel(
+        export_saved_model_path = model_estimator.export_savedmodel(
             export_dir_base=export_dir,
             serving_input_receiver_fn=serving_input_receiver_fn(tft_metadata,
                                                                 args.window_size)
         )
+
+        # Export output_dir to access Tensorboard through Kubeflow UI
+        metadata = {
+            'outputs': [{
+                'type': 'tensorboard',
+                'source': output_dir,
+            }]
+        }
+        with file_io.FileIO('/mlpipeline-ui-metadata.json', 'w') as f:
+            json.dump(metadata, f)
+
+        logger.info('Saved model exported at: {}'.format(
+            export_saved_model_path))
+        with file_io.FileIO('/saved_model_path.txt', 'w') as f:
+            f.write(export_saved_model_path)
+
+    logger.info("Training Done")
+    K.clear_session()
+    gc.collect()  # https://github.com/tensorflow/tensorflow/issues/3388#issuecomment-268502675
+    sys.exit(0)

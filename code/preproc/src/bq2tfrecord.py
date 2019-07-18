@@ -14,6 +14,7 @@ import tensorflow as tf
 import json
 import apache_beam as beam
 import tensorflow_transform as tft
+from tensorflow.python.lib.io import file_io
 
 from tensorflow_transform.beam import impl
 from tensorflow_transform.tf_metadata import dataset_schema
@@ -360,18 +361,17 @@ def preprocess_fn(features, window_size, znorm_stats):
     # (TENSORFLOW 1.13.1)
     lookup_mean = tf.contrib.lookup.HashTable(
         tf.contrib.lookup.KeyValueTensorInitializer(keys=[np.int64(int(i)) for i in znorm_stats['pickup_community_area']],
-                                            values=znorm_stats['mean'],
-                                            key_dtype=tf.int64,
-                                            value_dtype=tf.float32),
+                                                    values=znorm_stats['mean'],
+                                                    key_dtype=tf.int64,
+                                                    value_dtype=tf.float32),
         default_value=0)
 
     lookup_std = tf.contrib.lookup.HashTable(
         tf.contrib.lookup.KeyValueTensorInitializer(keys=[np.int64(int(i)) for i in znorm_stats['pickup_community_area']],
-                                            values=znorm_stats['std'],
-                                            key_dtype=tf.int64,
-                                            value_dtype=tf.float32),
+                                                    values=znorm_stats['std'],
+                                                    key_dtype=tf.int64,
+                                                    value_dtype=tf.float32),
         default_value=1)
-
 
     znorm_tensor_mean = lookup_mean.lookup(
         keys=features['community_area_code'])
@@ -424,7 +424,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--tfrecord-dir', dest='tfrecord_dir', required=True)
     parser.add_argument('--tfx-artifacts-dir',
-                        dest='tfx_artifacts_dir', required=True)
+                        dest='tft_artifacts_dir', required=True)
     parser.add_argument('--project', dest='project', required=True)
     parser.add_argument('--window-size', dest='window_size',
                         type=int, required=False, default=24)
@@ -456,7 +456,7 @@ if __name__ == '__main__':
                                  'Combine list' >> beam.CombineGlobally(CombineCommunityArea()) |
                                  'Map to string' >> beam.Map(lambda l: ','.join(l)) |
                                  'Dump to text' >> beam.io.WriteToText(os.path.join(
-                                     known_args.tfx_artifacts_dir, 'community_area_list.json'), shard_name_template='')
+                                     known_args.tft_artifacts_dir, 'community_area_list.json'), shard_name_template='')
                                  )
 
         # Query znorm statistics
@@ -467,17 +467,17 @@ if __name__ == '__main__':
              "Combine znorm Stats" >> beam.CombineGlobally(CombineZnormStats()) |
              "Map znorm stats to json" >> beam.Map(lambda d: json.dumps(d)) |
              "Dump znorm stats to file" >> beam.io.WriteToText(os.path.join(
-                 known_args.tfx_artifacts_dir, 'znorm_stats.json'), shard_name_template='')
+                 known_args.tft_artifacts_dir, 'znorm_stats.json'), shard_name_template='')
              )
 
-    community_area_list = open(os.path.join(known_args.tfx_artifacts_dir,
-                                            'community_area_list.json')).read().strip().split(',')
+    community_area_list = file_io.FileIO(os.path.join(known_args.tft_artifacts_dir,
+                                                      'community_area_list.json'), "r").read().strip().split(',')
 
-    znorm_stats = json.load(open(os.path.join(known_args.tfx_artifacts_dir,
-                                              'znorm_stats.json')))
+    znorm_stats = json.load(file_io.FileIO(os.path.join(known_args.tft_artifacts_dir,
+                                                        'znorm_stats.json'), "r"))
 
-    # Add some epsilon to avoid division by zero
-    # znorm_stats['std'] = [i+1 for i in znorm_stats['std']]
+    train_tfrecord_path = os.path.join(known_args.tfrecord_dir, 'train')
+    eval_tfrecord_path = os.path.join(known_args.tfrecord_dir, 'eval')
 
     # Preprocess dataset
     with beam.Pipeline(options=pipeline_options) as pipeline:
@@ -503,8 +503,7 @@ if __name__ == '__main__':
             norm_ts_windows_train_data, norm_ts_windows_train_metadata = norm_ts_windows_train
 
             _ = norm_ts_windows_train_data | 'Write TFrecords - train' >> beam.io.tfrecordio.WriteToTFRecord(
-                file_path_prefix=os.path.join(
-                    known_args.tfrecord_dir, 'train'),
+                file_path_prefix=train_tfrecord_path,
                 file_name_suffix=".tfrecords",
                 coder=example_proto_coder.ExampleProtoCoder(norm_ts_windows_train_metadata.schema))
 
@@ -523,10 +522,38 @@ if __name__ == '__main__':
             norm_ts_windows_eval_data, norm_ts_windows_eval_metadata = norm_ts_windows_eval
 
             _ = norm_ts_windows_eval_data | 'Write TFrecords - eval' >> beam.io.tfrecordio.WriteToTFRecord(
-                file_path_prefix=os.path.join(known_args.tfrecord_dir, 'eval'),
+                file_path_prefix=eval_tfrecord_path,
                 file_name_suffix=".tfrecords",
                 coder=example_proto_coder.ExampleProtoCoder(norm_ts_windows_eval_metadata.schema))
 
             # Dump transformation graph
             _ = transform_fn | 'Dump Transform Function Graph' >> transform_fn_io.WriteTransformFn(
-                known_args.tfx_artifacts_dir)            
+                known_args.tft_artifacts_dir)
+
+    # Dump parameters to be forwarded to the next pipeline step
+    with open("/train_tfrecord_path.txt", "w") as f:
+        f.write(train_tfrecord_path+'*')
+
+    with open("/eval_tfrecord_path.txt", "w") as f:
+        f.write(eval_tfrecord_path+'*')
+
+    with open("/znorm_stats.txt", "w") as f:
+        json.dump(znorm_stats, f)
+
+    with open("/n_areas.txt", "w") as f:
+        f.write(str(len(community_area_list)+2))
+
+    with open("/n_windows_train.txt", "w") as f:
+        n_windows_train = ((
+            split_datetime - start_datetime).days)*24 - known_args.window_size
+        logger.info("n_windows_train {}".format(n_windows_train))
+        f.write(str(n_windows_train))
+
+    with open("/n_windows_eval.txt", "w") as f:
+        n_windows_eval = ((end_datetime - split_datetime).days)*24 - \
+            known_args.window_size
+        logger.info("n_windows_eval {}".format(n_windows_eval))
+        f.write(str(n_windows_eval))
+
+    with open("/tft_artifacts_dir.txt", "w") as f:
+        f.write(known_args.tft_artifacts_dir)

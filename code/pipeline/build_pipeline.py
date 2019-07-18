@@ -10,14 +10,15 @@ import os
     description='A pipeline to preprocess, train and measure metrics for a time series forecast problem.'
 )
 def chicago_taxi_pipeline(
-        artifacts_dir="gs://ciandt-cognitive-sandbox-ts-forecast-bucket/data/timeseries",
-        model_dir="gs://ciandt-cognitive-sandbox-ts-forecast-bucket/models",
+        artifacts_dir="gs://ciandt-cognitive-sandbox-chicago-taxi-demo-bucket/{{workflow.uid}}/artifacts",
+        model_dir="gs://ciandt-cognitive-sandbox-chicago-taxi-demo-bucket/{{workflow.uid}}/models",
         project_id="ciandt-cognitive-sandbox",
         start_date="2019-04-01",
         end_date="2019-04-30",
         split_date="2019-04-20",
         window_size=24,  # hours
         model_name="rnn_v1",
+        deployed_model_name="chicago_taxi_forecast",
         dataflow_runner="DirectRunner",
         epochs=10,
         train_batch_size=128,
@@ -34,11 +35,10 @@ def chicago_taxi_pipeline(
       7. Plot time series
     """
 
-    temp_dir = os.path.join(artifacts_dir, "temp")
+    temp_dir = os.path.join(str(artifacts_dir), "temp")
 
     bq2tfrecord = dsl.ContainerOp(name='bq2tfrecord',
-                                  image='gcr.io/{project}/chicago-taxi-forecast-cluster/preproc:latest'.format(
-                                      project=project_id),
+                                  image='gcr.io/ciandt-cognitive-sandbox/chicago-taxi-forecast/preproc:latest',
                                   command=["python3", "/app/bq2tfrecord.py"],
                                   arguments=[
                                       "--tfrecord-dir", artifacts_dir,
@@ -58,16 +58,14 @@ def chicago_taxi_pipeline(
                                       "n_areas": "/n_areas.txt",
                                       "n_windows_train": "/n_windows_train.txt",
                                       "n_windows_eval": "/n_windows_eval.txt",
-                                      "tft_artifacts_dir": "tft_artifacts_dir.txt"
+                                      "tft_artifacts_dir": "/tft_artifacts_dir.txt"
                                   }
                                   ).apply(gcp.use_gcp_secret('user-gcp-sa'))
 
-
     train = dsl.ContainerOp(
         name='train',
-        image='gcr.io/{project}/chicago-taxi-forecast-cluster/train:latest'.format(
-            project=project_id),
-        command=["python", "/app/train_rnn_multi_sku.py"],
+        image='gcr.io/ciandt-cognitive-sandbox/chicago-taxi-forecast/train:latest',
+        command=["python3", "/app/train.py"],
         arguments=[
             "--tfrecord-file-train", bq2tfrecord.outputs["train_tfrecord_path"],
             "--tfrecord-file-eval", bq2tfrecord.outputs["eval_tfrecord_path"],
@@ -84,40 +82,65 @@ def chicago_taxi_pipeline(
         ],
         file_outputs={
             "saved_model_path": "/saved_model_path.txt"
+        },
+        output_artifact_paths={
+            'mlpipeline-ui-metadata': '/mlpipeline-ui-metadata.json'
         }
-    ).set_gpu_limit(1).apply(gcp.use_gcp_secret('user-gcp-sa')).after(bq2tfrecord)
+    ).apply(gcp.use_gcp_secret('user-gcp-sa')).after(bq2tfrecord)  # .set_gpu_limit(1)
 
-# deploy = dsl.ContainerOp(
-#     name='predict',
-#     image='gcr.io/ciandt-cognitive-sandbox/ts-forecast-train:latest',
-#     command=["python", "/app/predict_multi_sku.py"],
-#     arguments=[
-#         "--model-name", model_name,
-#         "--ckpt-path", train.outputs["ckpt_path"],
-#         "--metadata-tfrecord-file", csv2tfrecord.outputs["metadata_filename"],
-#         "--split-date", split_date,
-#         "--timeseries-path", bq2csv.outputs['output_dir'],
-#         "--gpu-memory-fraction", gpu_mem_usage
-#     ],
-#     file_outputs={
-#         "prediction_path": "/prediction_path.txt"
-#     }
-# ).set_gpu_limit(1).apply(gcp.use_gcp_secret('user-gcp-sa')).after(train)
+    deploy = dsl.ContainerOp(
+        name='deploy',
+        image='gcr.io/ciandt-cognitive-sandbox/chicago-taxi-forecast/deploy:latest',
+        command=["python", "/app/deploy_cmle.py"],
+        arguments=[
+            "--project", project_id,
+            "--gcs-path", train.outputs["saved_model_path"],
+            "--model-name", deployed_model_name
+        ]
+    ).apply(gcp.use_gcp_secret('user-gcp-sa')).after(train)  # .set_gpu_limit(1)
 
-# metrics = dsl.ContainerOp(
-#     name='metrics',
-#     image='gcr.io/ciandt-cognitive-sandbox/ts-forecast-metrics:latest',
-#     command=["python", "/app/metrics.py"],
-#     arguments=[
-#         "--prediction-file", predict.outputs['prediction_path'],
-#         "--metadata-tfrecord-file", csv2tfrecord.outputs["metadata_filename"]
-#     ],
-#     file_outputs={
-#         "mlpipeline-metrics": "/mlpipeline-metrics.json"
-#     }
-# ).apply(gcp.use_gcp_secret('user-gcp-sa')).after(predict)
+    predictions = dsl.ContainerOp(
+        name='predictions',
+        image='gcr.io/ciandt-cognitive-sandbox/chicago-taxi-forecast/evaluate:latest',
+        command=["python", "/app/make_predictions.py"],
+        arguments=[
+            "--model-name", deployed_model_name,
+            "--project", project_id,
+            "--window-size", window_size,
+            "--start-date", split_date,
+            "--end-date", end_date,
+            "--znorm-stats-json", bq2tfrecord.outputs['znorm_stats'],
+            "--batch-size", prediction_batch_size,
+            "--output-path", "gs://ciandt-cognitive-sandbox-chicago-taxi-demo-bucket/{{workflow.uid}}/predictions/forecast.csv"
+        ],
+        file_outputs={
+            "prediction_csv_path": "/prediction_csv_path.txt"
+        }
+    ).apply(gcp.use_gcp_secret('user-gcp-sa')).after(deploy)
+
+    metrics = dsl.ContainerOp(
+        name='metrics',
+        image='gcr.io/ciandt-cognitive-sandbox/chicago-taxi-forecast/evaluate:latest',
+        command=["python", "/app/evaluate.py"],
+        arguments=[
+            "--prediction-csv", predictions.outputs['prediction_csv_path']
+        ],
+        output_artifact_paths={
+            "mlpipeline-metrics": "/mlpipeline-metrics.json"
+        }
+    ).apply(gcp.use_gcp_secret('user-gcp-sa')).after(predictions)
+
+    plot = dsl.ContainerOp(
+        name='plot_time_series',
+        image='gcr.io/ciandt-cognitive-sandbox/chicago-taxi-forecast/evaluate:latest',
+        command=["python", "/app/plot_series.py"],
+        arguments=[
+            "--prediction-csv", predictions.outputs['prediction_csv_path'],
+            "--output-dir", "gs://ciandt-cognitive-sandbox-chicago-taxi-demo-bucket/{{workflow.uid}}/plots"
+        ]
+    ).apply(gcp.use_gcp_secret('user-gcp-sa')).after(predictions)
 
 
 if __name__ == '__main__':
     import kfp.compiler as compiler
-    compiler.Compiler().compile(chicago_taxi_pipeline, __file__ + '.tar.gz')
+    compiler.Compiler().compile(chicago_taxi_pipeline,  'chicago_taxi_pipeline.tar.gz')

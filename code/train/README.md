@@ -29,8 +29,8 @@ Run container
 TFRECORD_TRAIN=/artifacts_dir/train* \
 TFRECORD_EVAL=/artifacts_dir/eval* \
 TFT_ARTIFACT_DIR=/artifacts_dir/ \
-N_WINDOWS_TRAIN=18000 \
-N_WINDOWS_EVAL=18000 \
+N_WINDOWS_TRAIN=100 \
+N_WINDOWS_EVAL=100 \
 WINDOW_SIZE=6 \
 MODEL_NAME=rnn_v1 \
 EPOCHS=1 \
