@@ -23,20 +23,17 @@ tar -xvf kfctl_v0.5.1_linux.tar.gz.tar.gz
 mv kfctl /usr/local/bin
 ```
 
-```
 #Set application default credentials
 gcloud auth application-default login
 
 # Set up OAuth credentials and Cloud IAP. This allows you to securely connect to Kubeflow web applications. To setup OAuth with IAP please read https://www.kubeflow.org/docs/gke/deploy/oauth-setup/
 
-ROOT_DIR=${PWD}
+export REGION=us-east1
+export ZONE=${REGION}-d
 
-export REGION=us-central1
-export ZONE=${REGION}-a 
-
-export DEPLOYMENT_NAME=chicago-taxi-trips
+export DEPLOYMENT_NAME=chicago-taxi-demo
 export PROJECT=ciandt-cognitive-sandbox
-export KFAPP=${ROOT_DIR}/${DEPLOYMENT_NAME}
+export KFAPP=${DEPLOYMENT_NAME}
 
 # Default uses Cloud IAP:
 #OAuth 2.0 client ID: "Kubeflow Sandbox Web Client"
@@ -47,9 +44,11 @@ kfctl init ${KFAPP} --platform gcp --project ${PROJECT}
 
 
 # Alternatively, use this command if you want to use basic authentication:
-export KUBEFLOW_USERNAME=admin
-export KUBEFLOW_PASSWORD=admin
+export KUBEFLOW_USERNAME="chicago-taxi-demo"
+export KUBEFLOW_PASSWORD="chicago-taxi-demo"
+
 kfctl init ${KFAPP} --platform gcp --project ${PROJECT} --use_basic_auth -V
+
 
 cd ${KFAPP}
 
@@ -65,22 +64,3 @@ gsutil mb -c regional -l ${REGION} gs://${BUCKET_NAME}
 
 Access Kubeflow web UI at https://<DEPLOYMENT_NAME>.endpoints.<PROJECT>.cloud.goog/_gcp_gatekeeper/authenticate. 
 It may take a couple of minutes to the URI to be available
-
-## Build pipeline
-
-First, [setup up python environment](https://www.kubeflow.org/docs/pipelines/tutorials/pipelines-tutorial/#set-up-python) using miniconda ou virtualenv
-
-```
-conda create --name mlpipeline python=3.7
-source activate mlpipeline
-pip install -r requirements.txt --upgrade
-```
-
-Afterwards, compile the Kubeflow pipeline
-
-```
-cd code/pipeline
-python pipeline.py
-```
-
-Then [run](https://www.kubeflow.org/docs/pipelines/tutorials/pipelines-tutorial/#run-the-pipeline) the pipeline using the Kubeflow Pipelines Web Interface
