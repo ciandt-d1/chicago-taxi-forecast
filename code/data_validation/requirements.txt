@@ -1,0 +1,8 @@
+numpy
+pandas
+scipy
+jupyter
+apache-beam[gcp]
+tensorflow
+tensorflow-data-validation
+google-cloud-storage==1.13.2
