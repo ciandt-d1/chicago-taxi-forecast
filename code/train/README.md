@@ -8,7 +8,6 @@ In any doubt, check the [official documentation](https://www.kubeflow.org/docs/g
 ```
 export DEPLOYMENT_NAME=chicago-taxi-forecast
 export PROJECT=ciandt-cognitive-sandbox
-export GCP_SERVICE_ACC_JSON_PATH=ts-forecast-vm@ciandt-cognitive-sandbox.iam.gserviceaccount.com # to access google cloud storage
 export VERSION_TAG=latest
 export DOCKER_IMAGE_NAME=gcr.io/${PROJECT}/${DEPLOYMENT_NAME}/train:${VERSION_TAG}
 
@@ -26,8 +25,8 @@ docker run -it -v ${PWD}/src:/src -v ${ARTIFACTS_DIR}:/artifacts_dir --rm --runt
 
 Run container
 ```
-TFRECORD_TRAIN=/artifacts_dir/train* \
-TFRECORD_EVAL=/artifacts_dir/eval* \
+TFRECORD_TRAIN=/artifacts_dir/train-* \
+TFRECORD_EVAL=/artifacts_dir/eval-* \
 TFT_ARTIFACT_DIR=/artifacts_dir/ \
 N_WINDOWS_TRAIN=100 \
 N_WINDOWS_EVAL=100 \
