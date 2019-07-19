@@ -54,6 +54,7 @@ def chicago_taxi_pipeline(
                                   file_outputs={
                                       "train_tfrecord_path": "/train_tfrecord_path.txt",
                                       "eval_tfrecord_path": "/eval_tfrecord_path.txt",
+                                      "eval_raw_tfrecord_path": "/eval_raw_tfrecord_path.txt",
                                       "znorm_stats": "/znorm_stats.txt",
                                       "n_areas": "/n_areas.txt",
                                       "n_windows_train": "/n_windows_train.txt",
@@ -61,6 +62,22 @@ def chicago_taxi_pipeline(
                                       "tft_artifacts_dir": "/tft_artifacts_dir.txt"
                                   }
                                   ).apply(gcp.use_gcp_secret('user-gcp-sa'))
+
+    data_validation = dsl.ContainerOp(
+        name='data_validation',
+        image='gcr.io/ciandt-cognitive-sandbox/chicago-taxi-forecast/data-validation:latest',
+        command=["python3", "/app/data_validation.py"],
+        arguments=[
+            "--input-data-path", bq2tfrecord.outputs["eval_raw_tfrecord_path"],
+            "--output-dir", artifacts_dir
+        ],
+        file_outputs={
+            "schema":"/schema.txt"
+        },
+        output_artifact_paths={
+            'mlpipeline-ui-metadata': '/mlpipeline-ui-metadata.json'
+        }
+    ).apply(gcp.use_gcp_secret('user-gcp-sa')).after(bq2tfrecord)
 
     train = dsl.ContainerOp(
         name='train',

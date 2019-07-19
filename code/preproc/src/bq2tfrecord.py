@@ -478,6 +478,7 @@ if __name__ == '__main__':
 
     train_tfrecord_path = os.path.join(known_args.tfrecord_dir, 'train')
     eval_tfrecord_path = os.path.join(known_args.tfrecord_dir, 'eval')
+    eval_raw_tfrecord_path = os.path.join(known_args.tfrecord_dir, 'eval_raw')
 
     # Preprocess dataset
     with beam.Pipeline(options=pipeline_options) as pipeline:
@@ -526,16 +527,25 @@ if __name__ == '__main__':
                 file_name_suffix=".tfrecords",
                 coder=example_proto_coder.ExampleProtoCoder(norm_ts_windows_eval_metadata.schema))
 
+            # Dump raw eval set for further tensorflow model analysis
+            _ = ts_windows_eval | 'Write TFrecords - eval raw' >> beam.io.tfrecordio.WriteToTFRecord(
+                file_path_prefix=eval_raw_tfrecord_path,
+                file_name_suffix=".tfrecords",
+                coder=example_proto_coder.ExampleProtoCoder(ts_windows_schema.schema))
+
             # Dump transformation graph
             _ = transform_fn | 'Dump Transform Function Graph' >> transform_fn_io.WriteTransformFn(
                 known_args.tft_artifacts_dir)
 
     # Dump parameters to be forwarded to the next pipeline step
     with open("/train_tfrecord_path.txt", "w") as f:
-        f.write(train_tfrecord_path+'*')
+        f.write(train_tfrecord_path+'-*')
 
     with open("/eval_tfrecord_path.txt", "w") as f:
-        f.write(eval_tfrecord_path+'*')
+        f.write(eval_tfrecord_path+'-*')
+
+    with open("/eval_raw_tfrecord_path.txt", "w") as f:
+        f.write(eval_raw_tfrecord_path+'*')
 
     with open("/znorm_stats.txt", "w") as f:
         json.dump(znorm_stats, f)
