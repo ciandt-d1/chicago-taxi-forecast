@@ -22,6 +22,8 @@ from tensorflow.python.lib.io import file_io
 
 from tensorflow.keras import backend as K
 
+import tensorflow_model_analysis as tfma
+
 import multiprocessing
 N_CORES = multiprocessing.cpu_count()
 
@@ -67,7 +69,7 @@ def input_fn(tfrecords_path,
     return dataset
 
 
-def get_feature_spec(window_size):
+def get_raw_feature_spec(window_size):
 
     feature_spec = {
         'hour': tf.FixedLenFeature(shape=[window_size], dtype=tf.int64, default_value=None),
@@ -85,7 +87,7 @@ def get_feature_spec(window_size):
 
 def serving_input_receiver_fn(tft_metadata, window_size):
 
-    raw_feature_spec = get_feature_spec(window_size)
+    raw_feature_spec = get_raw_feature_spec(window_size)
 
     def _serving_input_receiver_fn():
 
@@ -108,6 +110,35 @@ def serving_input_receiver_fn(tft_metadata, window_size):
             transformed_features, serving_input_receiver.receiver_tensors)
 
     return _serving_input_receiver_fn
+
+
+def eval_input_receiver_fn(tft_metadata, window_size):
+
+    raw_feature_spec = get_raw_feature_spec(window_size)
+
+    # Add target to raw feature spec
+    raw_feature_spec['target'] = tf.FixedLenFeature(
+        shape=[], dtype=tf.float32, default_value=None)
+
+    input_proto = tf.placeholder(
+        dtype=tf.string, shape=[None], name='input_example_placeholder')
+
+    features = tf.io.parse_example(input_proto, raw_feature_spec)
+
+    transformed_features = tft_metadata.transform_raw_features(
+        features)
+    target_tensor = transformed_features['target']
+
+    # Remove target tensor from transformed feature,
+    # once transformed_features will be input to the model
+    transformed_features.pop('target')    
+
+    receiver_tensors = {'examples': input_proto}
+
+    return tfma.export.EvalInputReceiver(
+        features=transformed_features,
+        receiver_tensors=receiver_tensors,
+        labels=target_tensor)
 
 
 if __name__ == '__main__':
@@ -247,6 +278,16 @@ if __name__ == '__main__':
                                                                 args.window_size)
         )
 
+        # export eval saved model for TensorFlow Model Analysis
+        eval_model_dir = os.path.join(output_dir, 'eval_saved_model')
+        if tf.gfile.Exists(eval_model_dir):
+            tf.gfile.DeleteRecursively(eval_model_dir)
+
+        export_eval_saved_model_path = tfma.export.export_eval_savedmodel(
+            estimator=model_estimator,
+            export_dir_base=eval_model_dir,
+            eval_input_receiver_fn=lambda: eval_input_receiver_fn(tft_metadata, args.window_size))
+
         # Export output_dir to access Tensorboard through Kubeflow UI
         metadata = {
             'outputs': [{
@@ -262,7 +303,12 @@ if __name__ == '__main__':
         with file_io.FileIO('/saved_model_path.txt', 'w') as f:
             f.write(export_saved_model_path)
 
-    logger.info("Training Done")
-    K.clear_session()
+        logger.info('Eval saved model exported at {}'.format(
+            export_eval_saved_model_path))
+        with file_io.FileIO('/eval_saved_model_path.txt', 'w') as f:
+            f.write(export_eval_saved_model_path)
+
+        logger.info("Training Done")
     gc.collect()  # https://github.com/tensorflow/tensorflow/issues/3388#issuecomment-268502675
+    K.clear_session()
     sys.exit(0)
