@@ -36,7 +36,7 @@ if __name__ == '__main__':
 
     logger.info("Inferred schema \n {}".format(inferred_schema))
     schema_path = os.path.join(args.output_dir, 'schema.pb')
-    
+
     schema_text = text_format.MessageToString(inferred_schema)
     file_io.write_string_to_file(schema_path, schema_text)
 
@@ -44,6 +44,14 @@ if __name__ == '__main__':
 
     static_html_path = os.path.join(args.output_dir, 'web_app.html')
     logger.info("static_html_path {}".format(static_html_path))
+
+    # remove HTML iframe tags, otherwise the html won't render on kubeflow UI
+    start_str="<link rel"
+    end_str = "</facets-overview>"
+    start_str_i = tfdv_html.index(start_str)
+    end_str_i = tfdv_html.index(end_str)+len(end_str)
+    tfdv_html=tfdv_html[start_str_i:end_str_i]
+    
     file_io.write_string_to_file(static_html_path, tfdv_html)
 
     metadata = {
@@ -56,5 +64,5 @@ if __name__ == '__main__':
     with file_io.FileIO('/mlpipeline-ui-metadata.json', 'w') as f:
         json.dump(metadata, f)
 
-    with file_io.FileIO('/schema.txt','w') as f:
+    with file_io.FileIO('/schema.txt', 'w') as f:
         f.write(schema_path)
