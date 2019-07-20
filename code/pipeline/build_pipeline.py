@@ -72,7 +72,7 @@ def chicago_taxi_pipeline(
             "--output-dir", artifacts_dir
         ],
         file_outputs={
-            "schema":"/schema.txt"
+            "schema": "/schema.txt"
         },
         output_artifact_paths={
             'mlpipeline-ui-metadata': '/mlpipeline-ui-metadata.json'
@@ -154,7 +154,10 @@ def chicago_taxi_pipeline(
         arguments=[
             "--prediction-csv", predictions.outputs['prediction_csv_path'],
             "--output-dir", "gs://ciandt-cognitive-sandbox-chicago-taxi-demo-bucket/{{workflow.uid}}/plots"
-        ]
+        ],
+        output_artifact_paths={
+            'mlpipeline-ui-metadata': '/mlpipeline-ui-metadata.json'
+        }
     ).apply(gcp.use_gcp_secret('user-gcp-sa')).after(predictions)
 
 
