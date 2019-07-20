@@ -1,11 +1,7 @@
 import argparse
 import tensorflow as tf
 import tensorflow_data_validation as tfdv
-import tensorflow_transform as tft
 
-from tensorflow_transform.tf_metadata import dataset_schema
-from tensorflow_transform.tf_metadata import dataset_metadata
-from tensorflow_transform.tf_metadata import metadata_io
 
 import json
 
@@ -13,7 +9,6 @@ from google.protobuf import text_format
 import google.cloud.storage
 
 from tensorflow.python.lib.io import file_io
-from tensorflow_metadata.proto.v0 import schema_pb2
 
 import os
 import logging
@@ -46,12 +41,12 @@ if __name__ == '__main__':
     logger.info("static_html_path {}".format(static_html_path))
 
     # remove HTML iframe tags, otherwise the html won't render on kubeflow UI
-    start_str="<link rel"
+    start_str = "<link rel"
     end_str = "</facets-overview>"
     start_str_i = tfdv_html.index(start_str)
     end_str_i = tfdv_html.index(end_str)+len(end_str)
-    tfdv_html=tfdv_html[start_str_i:end_str_i]
-    
+    tfdv_html = tfdv_html[start_str_i:end_str_i]
+
     file_io.write_string_to_file(static_html_path, tfdv_html)
 
     metadata = {
