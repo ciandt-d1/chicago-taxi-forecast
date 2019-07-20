@@ -1,4 +1,5 @@
 google-api-python-client
+google-cloud-storage
 pandas
 pandas-gbq==0.10.0
 gcsfs
