@@ -37,9 +37,28 @@ def chicago_taxi_pipeline(
 
     temp_dir = os.path.join(str(artifacts_dir), "temp")
 
+    read_metadata = dsl.ContainerOp(name='read_metadata',
+                                    image='gcr.io/ciandt-cognitive-sandbox/chicago-taxi-forecast/preproc:latest',
+                                    command=[
+                                        "python", "/app/read_metadata.py"],
+                                    arguments=[
+                                        "--tfx-artifacts-dir", artifacts_dir,
+                                        "--project", project_id,
+                                        "--start-date", start_date,
+                                        "--end-date", end_date,
+                                        "--split-date", split_date,
+                                        "--temp-dir", temp_dir,
+                                        "--runner", dataflow_runner
+                                    ],
+                                    file_outputs={
+                                        "community_area_list_path": "/community_area_list_path.txt",
+                                        "znorm_stats_path": "/znorm_stats_path.txt",
+                                    }
+                                    ).apply(gcp.use_gcp_secret('user-gcp-sa'))
+
     bq2tfrecord = dsl.ContainerOp(name='bq2tfrecord',
                                   image='gcr.io/ciandt-cognitive-sandbox/chicago-taxi-forecast/preproc:latest',
-                                  command=["python3", "/app/bq2tfrecord.py"],
+                                  command=["python", "/app/bq2tfrecord.py"],
                                   arguments=[
                                       "--tfrecord-dir", artifacts_dir,
                                       "--tfx-artifacts-dir", artifacts_dir,
@@ -48,6 +67,8 @@ def chicago_taxi_pipeline(
                                       "--start-date", start_date,
                                       "--end-date", end_date,
                                       "--split-date", split_date,
+                                      "--community-area-list-path", read_metadata.outputs["community_area_list_path"],
+                                      "--znorm-stats-path", read_metadata.outputs["znorm_stats_path"],
                                       "--temp-dir", temp_dir,
                                       "--runner", dataflow_runner
                                   ],
@@ -126,7 +147,7 @@ def chicago_taxi_pipeline(
             "--window-size", window_size,
             "--start-date", split_date,
             "--end-date", end_date,
-            "--znorm-stats-json", bq2tfrecord.outputs['znorm_stats'],
+            "--znorm-stats-json", read_metadata.outputs["znorm_stats_path"], #bq2tfrecord.outputs['znorm_stats'],
             "--batch-size", prediction_batch_size,
             "--output-path", "gs://ciandt-cognitive-sandbox-chicago-taxi-demo-bucket/{{workflow.uid}}/predictions/forecast.csv"
         ],
