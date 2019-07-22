@@ -147,7 +147,8 @@ def chicago_taxi_pipeline(
             "--window-size", window_size,
             "--start-date", split_date,
             "--end-date", end_date,
-            "--znorm-stats-json", read_metadata.outputs["znorm_stats_path"], #bq2tfrecord.outputs['znorm_stats'],
+            # bq2tfrecord.outputs['znorm_stats'],
+            "--znorm-stats-json", read_metadata.outputs["znorm_stats_path"],
             "--batch-size", prediction_batch_size,
             "--output-path", "gs://ciandt-cognitive-sandbox-chicago-taxi-demo-bucket/{{workflow.uid}}/predictions/forecast.csv"
         ],
