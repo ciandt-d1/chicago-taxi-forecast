@@ -17,6 +17,7 @@ from tensorflow_transform.beam.tft_beam_io import transform_fn_io
 from tensorflow_transform.tf_metadata import metadata_io
 from tensorflow_transform.tf_metadata import dataset_schema
 from tensorflow_transform.tf_metadata import dataset_metadata
+from tensorflow_transform.tf_metadata import schema_utils
 from tensorflow_transform import TFTransformOutput
 from tensorflow.python.lib.io import file_io
 
@@ -127,11 +128,11 @@ def eval_input_receiver_fn(tft_metadata, window_size):
 
     transformed_features = tft_metadata.transform_raw_features(
         features)
-    target_tensor = transformed_features['target']
+    target_tensor = {'target': transformed_features['target']}
 
     # Remove target tensor from transformed feature,
     # once transformed_features will be input to the model
-    transformed_features.pop('target')    
+    transformed_features.pop('target')
 
     receiver_tensors = {'examples': input_proto}
 
@@ -253,8 +254,8 @@ if __name__ == '__main__':
 
         run_config = tf.estimator.RunConfig(
             model_dir=output_dir,
-            save_summary_steps=100,
-            save_checkpoints_steps=100,
+            save_summary_steps=1000,
+            save_checkpoints_steps=1000,
             keep_checkpoint_max=1
         )
 
