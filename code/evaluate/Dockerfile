@@ -11,5 +11,5 @@ RUN pip install -r /assets/requirements.txt
 
 COPY src /app
 
-COPY service_account.json /assets/service_account.json
-ENV GOOGLE_APPLICATION_CREDENTIALS=/assets/service_account.json
+# COPY service_account.json /assets/service_account.json
+# ENV GOOGLE_APPLICATION_CREDENTIALS=/assets/service_account.json
