@@ -25,6 +25,16 @@ docker run -it -v ${PWD}/src:/src -v ${ARTIFACTS_DIR}:/artifacts_dir --rm  ${DOC
 
 Run container
 ```
+python3 read_metadata.py \
+--tfx-artifacts-dir /artifacts_dir \
+--project ciandt-cognitive-sandbox \
+--start-date 2019-04-10 \
+--end-date  2019-04-30 \
+--split-date 2019-04-20 \
+--temp-dir /tmp \
+--runner DirectRunner
+
+
 python3 bq2tfrecord.py \
 --tfrecord-dir /artifacts_dir \
 --tfx-artifacts-dir /artifacts_dir \
@@ -37,18 +47,6 @@ python3 bq2tfrecord.py \
 --runner DirectRunner
 ```
 
-### Run directly on Google Cloud DataFlow
-
-Build package
-
-```
-
-```
-
-Submit job
-```
-
-```
 
 ### Upload container image to the GCP Conainer Registry
 ```

@@ -37,11 +37,6 @@ logging.basicConfig()
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-COMMUNITY_AREA_QUERY = """
-    SELECT DISTINCT pickup_community_area FROM `bigquery-public-data.chicago_taxi_trips.taxi_trips`
-    WHERE pickup_community_area IS NOT NULL
-"""
-
 
 def query_trips(start_date, end_date):
 
@@ -64,76 +59,6 @@ def query_trips(start_date, end_date):
     return query_str
 
 
-def query_znorm_stats(start_date, end_date):
-    query_str = """
-        SELECT pickup_community_area, AVG(n_trips) mean, STDDEV(n_trips)+1 std FROM
-            (SELECT
-                pickup_community_area,
-                EXTRACT(DATE from trip_start_timestamp) as date,
-                EXTRACT(HOUR from trip_start_timestamp) as hour,
-                COUNT(*) as n_trips
-                FROM `bigquery-public-data.chicago_taxi_trips.taxi_trips`
-                    WHERE trip_start_timestamp >= '{start_date}'
-                    AND trip_start_timestamp < '{end_date}'
-                    AND pickup_community_area IS NOT NULL
-                GROUP BY date, hour, pickup_community_area
-                ORDER BY date, hour ASC)
-        GROUP BY pickup_community_area
-        ORDER BY pickup_community_area ASC
-    """.format(start_date=start_date, end_date=end_date)
-
-    return query_str
-
-
-class ParseZnormStatsRow(beam.DoFn):
-    def process(self, element):
-        yield {'pickup_community_area': str(element['pickup_community_area']),
-               'mean': float(element['mean']),
-               'std': float(element['std'])
-               }
-
-
-def read_znorm_stats_from_bq(pipeline, start_date, end_date):
-    query_str = query_znorm_stats(start_date, end_date)
-    raw_data = (pipeline |
-                "Read znorm stats from BigQuery from {} to {}".format(start_date, end_date) >> beam.io.Read(
-                    beam.io.BigQuerySource(query=query_str, use_standard_sql=True)) |
-                "Parse stats from {} to {}".format(start_date, end_date) >> beam.ParDo(ParseZnormStatsRow()))
-
-    return raw_data
-
-
-class CombineZnormStats(beam.CombineFn):
-
-    def __init__(self):
-        super(CombineZnormStats, self).__init__()
-
-    def create_accumulator(self):
-        return {}
-
-    def add_input(self, accumulator, element):
-        # accumulator.append(str(element.get('pickup_community_area')))
-        for k in element.keys():
-            if k not in accumulator:
-                accumulator[k] = []
-            accumulator[k].append(element[k])
-
-        return accumulator
-
-    def merge_accumulators(self, accumulators):
-        output = {}
-        for acc in accumulators:
-            for k in acc:
-                if k not in output:
-                    output[k] = []
-                output[k].extend(acc[k])
-
-        return output
-
-    def extract_output(self, output):
-        return output
-
-
 class ParseRow(beam.DoFn):
     def process(self, element):
         yield {'pickup_community_area': str(element['pickup_community_area']),
@@ -152,28 +77,6 @@ def read_data_from_bq(pipeline, start_date, end_date):
                 "Parse BigQuery Row from {} to {}".format(start_date, end_date) >> beam.ParDo(ParseRow()))
 
     return raw_data
-
-
-class CombineCommunityArea(beam.CombineFn):
-
-    def __init__(self):
-        super(CombineCommunityArea, self).__init__()
-
-    def create_accumulator(self):
-        return []
-
-    def add_input(self, accumulator, element):
-        accumulator.append(str(element.get('pickup_community_area')))
-        return accumulator
-
-    def merge_accumulators(self, accumulators):
-        output = []
-        for a in accumulators:
-            output.extend(a)
-        return output
-
-    def extract_output(self, output):
-        return list(set(output))
 
 
 class GroupItemsByDate(beam.CombineFn):
@@ -431,6 +334,10 @@ if __name__ == '__main__':
     parser.add_argument('--start-date', dest='start_date', required=True)
     parser.add_argument('--end-date', dest='end_date', required=True)
     parser.add_argument('--split-date', dest='split_date', required=True)
+    parser.add_argument('--community-area-list-path',
+                        dest='community_area_list_path', required=True)
+    parser.add_argument('--znorm-stats-path',
+                        dest='znorm_stats_path', required=True)
     parser.add_argument('--temp-dir', dest='temp_dir',
                         required=False, default='/tmp')
     known_args, pipeline_args = parser.parse_known_args()
@@ -444,37 +351,22 @@ if __name__ == '__main__':
     split_datetime = datetime.datetime.strptime(
         known_args.split_date, '%Y-%m-%d')
 
+    datetime_now_str = datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
+
+    if 'DataflowRunner' in pipeline_args:
+        pipeline_args.extend(['--project', known_args.project,
+                              '--temp_location', known_args.temp_dir,
+                              '--save_main_session',
+                              '--setup_file', './setup.py',
+                              '--job_name', 'chicago-taxi-trips-bq2tfrecords-{}'.format(datetime_now_str)])
+
+    logger.info(pipeline_args)
+
     pipeline_options = PipelineOptions(flags=pipeline_args)
 
-    # Query metadata
-    with beam.Pipeline(options=pipeline_options) as pipeline:
-
-        # List eligible community areas
-        community_area_list_p = (pipeline |
-                                 'Query eligible Community Areas' >> beam.io.Read(beam.io.BigQuerySource(
-                                     query=COMMUNITY_AREA_QUERY, use_standard_sql=True)) |
-                                 'Combine list' >> beam.CombineGlobally(CombineCommunityArea()) |
-                                 'Map to string' >> beam.Map(lambda l: ','.join(l)) |
-                                 'Dump to text' >> beam.io.WriteToText(os.path.join(
-                                     known_args.tft_artifacts_dir, 'community_area_list.json'), shard_name_template='')
-                                 )
-
-        # Query znorm statistics
-        znorm_stats_p = read_znorm_stats_from_bq(
-            pipeline, known_args.start_date, known_args.split_date)
-
-        _ = (znorm_stats_p |
-             "Combine znorm Stats" >> beam.CombineGlobally(CombineZnormStats()) |
-             "Map znorm stats to json" >> beam.Map(lambda d: json.dumps(d)) |
-             "Dump znorm stats to file" >> beam.io.WriteToText(os.path.join(
-                 known_args.tft_artifacts_dir, 'znorm_stats.json'), shard_name_template='')
-             )
-
-    community_area_list = file_io.FileIO(os.path.join(known_args.tft_artifacts_dir,
-                                                      'community_area_list.json'), "r").read().strip().split(',')
-
-    znorm_stats = json.load(file_io.FileIO(os.path.join(known_args.tft_artifacts_dir,
-                                                        'znorm_stats.json'), "r"))
+    community_area_list = file_io.FileIO(
+        known_args.community_area_list_path, "r").read().strip().split(',')
+    znorm_stats = json.load(file_io.FileIO(known_args.znorm_stats_path, "r"))
 
     train_tfrecord_path = os.path.join(known_args.tfrecord_dir, 'train')
     eval_tfrecord_path = os.path.join(known_args.tfrecord_dir, 'eval')
@@ -492,7 +384,9 @@ if __name__ == '__main__':
                                     "Merge - train" >> beam.CombineGlobally(GroupItemsByDate(community_area_list, (start_datetime, split_datetime))))
 
             ts_windows_train = (orders_by_date_train | "Extract timeseries windows - train" >>
-                                beam.ParDo(ExtractRawTimeseriesWindow(known_args.window_size)))
+                                beam.ParDo(ExtractRawTimeseriesWindow(known_args.window_size)) |
+                                "Fusion breaker train" >> beam.Reshuffle()
+                                )
 
             # _ = ts_windows_train | "print ts_windows_train" >> beam.Map(print)
 
@@ -516,10 +410,12 @@ if __name__ == '__main__':
                                    "Merge SKUs - eval" >> beam.CombineGlobally(GroupItemsByDate(community_area_list, (split_datetime, end_datetime))))
 
             ts_windows_eval = (orders_by_date_eval | "Extract timeseries windows - eval" >>
-                               beam.ParDo(ExtractRawTimeseriesWindow(known_args.window_size)))
+                               beam.ParDo(ExtractRawTimeseriesWindow(known_args.window_size)) |
+                               "Fusion breaker eval" >> beam.Reshuffle())
 
             norm_ts_windows_eval = (((ts_windows_eval, ts_windows_schema), transform_fn) |
                                     "Transform - eval" >> impl.TransformDataset())
+
             norm_ts_windows_eval_data, norm_ts_windows_eval_metadata = norm_ts_windows_eval
 
             _ = norm_ts_windows_eval_data | 'Write TFrecords - eval' >> beam.io.tfrecordio.WriteToTFRecord(

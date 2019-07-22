@@ -8,6 +8,7 @@ import googleapiclient.discovery
 import base64
 import sys
 import tensorflow as tf
+from tensorflow.python.lib.io import file_io
 
 import logging
 logging.basicConfig()
@@ -81,9 +82,9 @@ if __name__ == "__main__":
     service = googleapiclient.discovery.build(
         'ml', 'v1', cache_discovery=False)
 
-    # Load community areas mean and std to reverse znorm
-    # znorm_stats = json.load(open(args.znorm_stats_json, 'r'))
-    znorm_stats = json.loads(args.znorm_stats_json)
+    # Load community areas mean and std to reverse znorm    
+    # znorm_stats = json.loads(args.znorm_stats_json)
+    znorm_stats = json.load(file_io.FileIO(args.znorm_stats_json, "r"))
     znorm_stats = {int(ca): {'mean': mean, 'std': std} for ca, mean, std in zip(
         znorm_stats['pickup_community_area'], znorm_stats['mean'], znorm_stats['std'])}
 
