@@ -1,6 +1,6 @@
 # End-to-End time series forecast pipeline with Kubeflow and TFX
 
-This repo contains the minimum steps to create an e2e time series forecast pipeline on KubeFlow and TFX deployed at Google Cloud Platform
+This repo contains the minimum steps to create an e2e time series forecast pipeline on KubeFlow and TFX, deployed at Google Cloud Platform
 
 The [chicago taxi rides dataset](https://digital.cityofchicago.org/index.php/chicago-taxi-data-released/) was used throughout this tutorial.
 
