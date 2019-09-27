@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 
 """
-Process Chigaco Taxi dataset from BigQuery to TFRecords using TensorFlow Transform
+Retrieve metadata from BigQuery
 """
 
 import argparse
@@ -43,7 +43,8 @@ COMMUNITY_AREA_QUERY = """
 """
 
 
-def query_znorm_stats(start_date, end_date):
+def _query_znorm_stats(start_date, end_date):
+    """ Private function which returns a query string """
     query_str = """
         SELECT pickup_community_area, AVG(n_trips) mean, STDDEV(n_trips)+1 std FROM
             (SELECT
@@ -65,6 +66,8 @@ def query_znorm_stats(start_date, end_date):
 
 
 class ParseZnormStatsRow(beam.DoFn):
+    """ Parse BigQuery Row """
+
     def process(self, element):
         yield {'pickup_community_area': str(element['pickup_community_area']),
                'mean': float(element['mean']),
@@ -72,8 +75,10 @@ class ParseZnormStatsRow(beam.DoFn):
                }
 
 
-def read_znorm_stats_from_bq(pipeline, start_date, end_date):
-    query_str = query_znorm_stats(start_date, end_date)
+def _read_znorm_stats_from_bq(pipeline, start_date, end_date):
+    """ Read z-norm stats """
+
+    query_str = _query_znorm_stats(start_date, end_date)
     raw_data = (pipeline |
                 "Read znorm stats from BigQuery from {} to {}".format(start_date, end_date) >> beam.io.Read(
                     beam.io.BigQuerySource(query=query_str, use_standard_sql=True)) |
@@ -83,6 +88,7 @@ def read_znorm_stats_from_bq(pipeline, start_date, end_date):
 
 
 class CombineZnormStats(beam.CombineFn):
+    """ Group z-norm stats for each chicago community area """
 
     def __init__(self):
         super(CombineZnormStats, self).__init__()
@@ -114,6 +120,7 @@ class CombineZnormStats(beam.CombineFn):
 
 
 class CombineCommunityArea(beam.CombineFn):
+    """ Group each chicago community area """
 
     def __init__(self):
         super(CombineCommunityArea, self).__init__()
@@ -137,13 +144,10 @@ class CombineCommunityArea(beam.CombineFn):
 
 if __name__ == '__main__':
 
-    parser = argparse.ArgumentParser()
-    # parser.add_argument('--tfrecord-dir', dest='tfrecord_dir', required=True)
+    parser = argparse.ArgumentParser()    
     parser.add_argument('--tfx-artifacts-dir',
                         dest='tft_artifacts_dir', required=True)
     parser.add_argument('--project', dest='project', required=True)
-    # parser.add_argument('--window-size', dest='window_size',
-    #                     type=int, required=False, default=24)
     parser.add_argument('--start-date', dest='start_date', required=True)
     parser.add_argument('--end-date', dest='end_date', required=True)
     parser.add_argument('--split-date', dest='split_date', required=True)
@@ -192,7 +196,7 @@ if __name__ == '__main__':
                                  )
 
         # Query znorm statistics
-        znorm_stats_p = read_znorm_stats_from_bq(
+        znorm_stats_p = _read_znorm_stats_from_bq(
             pipeline, known_args.start_date, known_args.split_date)
 
         _ = (znorm_stats_p |

@@ -1,3 +1,8 @@
+# -*- coding: utf-8 -*-
+"""
+Package module
+"""
+
 import setuptools as setuptools
 
 REQUIRED_PACKAGES = [

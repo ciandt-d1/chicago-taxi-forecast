@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 
 """
-Process Chigaco Taxi dataset from BigQuery to TFRecords using TensorFlow Transform
+Preprocess Chigaco Taxi dataset from BigQuery to TFRecords using TensorFlow Transform
 """
 
 import argparse
@@ -38,7 +38,8 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 
-def query_trips(start_date, end_date):
+def _query_trips(start_date, end_date):
+    """ Private function which returns a query string """
 
     query_str = """
         SELECT
@@ -60,6 +61,8 @@ def query_trips(start_date, end_date):
 
 
 class ParseRow(beam.DoFn):
+    """ Parse BigQuery Row """
+
     def process(self, element):
         yield {'pickup_community_area': str(element['pickup_community_area']),
                'date': element['date'],
@@ -68,9 +71,9 @@ class ParseRow(beam.DoFn):
                }
 
 
-def read_data_from_bq(pipeline, start_date, end_date):
-
-    query_str = query_trips(start_date, end_date)
+def _read_data_from_bq(pipeline, start_date, end_date):
+    """ Read raw dataset from BigQuery """
+    query_str = _query_trips(start_date, end_date)
     raw_data = (pipeline |
                 "Read data from BigQuery from {} to {}".format(start_date, end_date) >> beam.io.Read(
                     beam.io.BigQuerySource(query=query_str, use_standard_sql=True)) |
@@ -80,6 +83,7 @@ def read_data_from_bq(pipeline, start_date, end_date):
 
 
 class GroupItemsByDate(beam.CombineFn):
+    """ Group taxi rides hourly for each chicago community area """
 
     def __init__(self, community_area_list, date_range):
         super(GroupItemsByDate, self).__init__()
@@ -110,6 +114,8 @@ class GroupItemsByDate(beam.CombineFn):
         return accumulator
 
     def merge_accumulators(self, accumulators):
+
+        # Create empty accumulator
         output = {}
         for i in range(self.delta.days + 1):
 
@@ -122,6 +128,7 @@ class GroupItemsByDate(beam.CombineFn):
                 for ca in self.community_area_list:
                     output[date_key][hour][ca] = 0
 
+        # Fill empty accumulator with existing ones
         for a in accumulators:
             for date, date_dict in a.items():
                 for hour, hour_dict in date_dict.items():
@@ -130,6 +137,7 @@ class GroupItemsByDate(beam.CombineFn):
         return output
 
     def extract_output(self, output):
+        """ Flatten accumulator as a dict of list """
 
         flattened_dict = {
             'date': [],
@@ -150,6 +158,13 @@ class GroupItemsByDate(beam.CombineFn):
 
 
 class ExtractRawTimeseriesWindow(beam.DoFn):
+    """ 
+    Sort taxi rides by ascending date for each community area
+    and return time series as a sliding window
+
+    TODO: check if this can be done with Apache Beam windowning
+    """
+
     def __init__(self,  window_size):
         self.window_size = window_size
 
@@ -197,55 +212,66 @@ class ExtractRawTimeseriesWindow(beam.DoFn):
                 yield window_dict
 
 
-def scale_temporal_feature(value, period):
+def _scale_temporal_feature(value, period):
+    """ Scale feature between [0,1] given a period """    
     scaled_value = tf.divide(tf.cast(value, tf.float32), period)
 
     return scaled_value
 
 
-def process_temporal_features_sin(value, period):
-    scaled_value = scale_temporal_feature(value, period)
+def _process_temporal_features_sin(value, period):
+    """ Get the sine of a temporal feature """
+    scaled_value = _scale_temporal_feature(value, period)
     value_sin = tf.math.sin(2*np.pi*scaled_value)
 
     return value_sin
 
 
-def process_temporal_features_cos(value, period):
-    scaled_value = scale_temporal_feature(value, period)
+def _process_temporal_features_cos(value, period):
+    """ Get the sin of a temporal feature """
+    scaled_value = _scale_temporal_feature(value, period)
     value_cos = tf.math.cos(2*np.pi*scaled_value)
 
     return value_cos
 
 
-def preprocess_fn(features, window_size, znorm_stats):
+def _preprocess_fn(features, window_size, znorm_stats):
+    """ 
+    TFT transfom function 
+    This function will be used to create the preprocessing graph 
+    to be used further on model serving.    
+    """
 
     output_features = {}
 
-    output_features['hour_sin'] = process_temporal_features_sin(
+    # Transform temporal features
+    output_features['hour_sin'] = _process_temporal_features_sin(
         features['hour'], 25)
-    output_features['hour_cos'] = process_temporal_features_cos(
+    output_features['hour_cos'] = _process_temporal_features_cos(
         features['hour'], 25)
-    output_features['day_of_week_sin'] = process_temporal_features_sin(
+    output_features['day_of_week_sin'] = _process_temporal_features_sin(
         features['day_of_week'], 8)
-    output_features['day_of_week_cos'] = process_temporal_features_cos(
+    output_features['day_of_week_cos'] = _process_temporal_features_cos(
         features['day_of_week'], 8)
-    output_features['day_of_month_sin'] = process_temporal_features_sin(
+    output_features['day_of_month_sin'] = _process_temporal_features_sin(
         features['day_of_month'], 32)
-    output_features['day_of_month_cos'] = process_temporal_features_cos(
+    output_features['day_of_month_cos'] = _process_temporal_features_cos(
         features['day_of_month'], 32)
-    output_features['week_number_sin'] = process_temporal_features_sin(
+    output_features['week_number_sin'] = _process_temporal_features_sin(
         features['week_number'], 55)
-    output_features['week_number_cos'] = process_temporal_features_cos(
+    output_features['week_number_cos'] = _process_temporal_features_cos(
         features['week_number'], 55)
-    output_features['month_sin'] = process_temporal_features_sin(
+    output_features['month_sin'] = _process_temporal_features_sin(
         features['month'], 13)
-    output_features['month_cos'] = process_temporal_features_cos(
+    output_features['month_cos'] = _process_temporal_features_cos(
         features['month'], 13)
 
     output_features['community_area'] = features['community_area']
     # output_features['community_area_code'] = features['community_area_code']
 
-    # convert znorm statistics into tensor lookup table
+    # Load z-norm mean and standard deviation into tensorflow lookup tables
+    # This is the way to scale each community area time series with their own parameters
+
     # (TENSORFLOW 1.14)
     # lookup_mean = tf.lookup.StaticHashTable(
     #     tf.lookup.KeyValueTensorInitializer(keys=[np.int64(int(i)) for i in znorm_stats['pickup_community_area']],
@@ -276,22 +302,23 @@ def preprocess_fn(features, window_size, znorm_stats):
                                                     value_dtype=tf.float32),
         default_value=1)
 
+    # Get z-norm stats for a given community area
     znorm_tensor_mean = lookup_mean.lookup(
         keys=features['community_area_code'])
     znorm_tensor_std = lookup_std.lookup(keys=features['community_area_code'])
 
-    # force shape
+    # Force z-norm stats tensors to be 2D
     znorm_tensor_mean = tf.reshape(znorm_tensor_mean, [-1, 1])
     znorm_tensor_std = tf.reshape(znorm_tensor_std, [-1, 1])
     target = tf.reshape(features['target'], [-1, 1])
 
-    # normalize
+    # Do z-norm
     output_features['n_trips'] = tf.math.divide(
         tf.math.subtract(features['n_trips'], znorm_tensor_mean), znorm_tensor_std)
     output_features['target'] = tf.math.divide(
         tf.math.subtract(target, znorm_tensor_mean), znorm_tensor_std)
 
-    # reshape
+    # Reshape time series tensors to be 3D (batch size, window size, feature size)
     for k in ['hour_sin', 'hour_cos', 'day_of_week_sin',
               'day_of_week_cos', 'day_of_month_sin', 'day_of_month_cos',
               'week_number_sin', 'week_number_cos',
@@ -303,7 +330,12 @@ def preprocess_fn(features, window_size, znorm_stats):
     return output_features
 
 
-def get_feature_spec(window_size):
+def _get_feature_spec(window_size):
+    """
+    Retrieve schema for input features
+    VarLenFeatures for time series leads to lots of headaches,
+    so FixedLenFeature is preferable
+    """
 
     schema_dict = {
         'hour': tf.FixedLenFeature(shape=[window_size], dtype=tf.int64, default_value=None),
@@ -377,7 +409,7 @@ if __name__ == '__main__':
         with impl.Context(known_args.temp_dir):
 
             # Process training data
-            raw_data_train = read_data_from_bq(
+            raw_data_train = _read_data_from_bq(
                 pipeline, known_args.start_date, known_args.split_date)
 
             orders_by_date_train = (raw_data_train |
@@ -388,11 +420,9 @@ if __name__ == '__main__':
                                 "Fusion breaker train" >> beam.Reshuffle()
                                 )
 
-            # _ = ts_windows_train | "print ts_windows_train" >> beam.Map(print)
-
-            ts_windows_schema = get_feature_spec(known_args.window_size)
+            ts_windows_schema = _get_feature_spec(known_args.window_size)
             norm_ts_windows_train, transform_fn = ((ts_windows_train, ts_windows_schema) |
-                                                   "Analyze and Transform - train" >> impl.AnalyzeAndTransformDataset(lambda t: preprocess_fn(t,
+                                                   "Analyze and Transform - train" >> impl.AnalyzeAndTransformDataset(lambda t: _preprocess_fn(t,
                                                                                                                                               known_args.window_size,
                                                                                                                                               znorm_stats)))
             norm_ts_windows_train_data, norm_ts_windows_train_metadata = norm_ts_windows_train
@@ -403,7 +433,7 @@ if __name__ == '__main__':
                 coder=example_proto_coder.ExampleProtoCoder(norm_ts_windows_train_metadata.schema))
 
             # Process evaluation data
-            raw_data_eval = read_data_from_bq(
+            raw_data_eval = _read_data_from_bq(
                 pipeline, known_args.split_date,  known_args.end_date)
 
             orders_by_date_eval = (raw_data_eval |
