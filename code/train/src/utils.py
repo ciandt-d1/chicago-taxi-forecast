@@ -3,6 +3,7 @@
 import tensorflow as tf
 
 def list_tfrecords(path_regex):
+    """ List tfrecords path for a given regex """
     tfrecord_list = []
     with tf.Session() as sess:
         tfrecord_file_op = tf.data.Dataset.list_files(
