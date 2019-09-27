@@ -1,5 +1,12 @@
 # -*- coding: utf-8 -*-
 
+""" Train a ML model
+
+    TODO:
+
+    *   Parameterize Optimizer and learning rate
+"""
+
 import logging
 import utils
 import models
@@ -39,6 +46,10 @@ def input_fn(tfrecords_path,
              tft_metadata,
              window_size,
              batch_size=8):
+    """ Train input function
+
+        Create and parse dataset from tfrecords shards with TFT schema
+    """
 
     def _parse_sequence_example(proto):
         return tf.io.parse_single_example(proto, features=tft_metadata.transformed_feature_spec())
@@ -71,6 +82,11 @@ def input_fn(tfrecords_path,
 
 
 def get_raw_feature_spec(window_size):
+    """ Retrieve schema for input features to be used at serving function
+        
+        Unfortunately TFT does not dump input feature spec, so it
+        needs to be hard-coded built
+    """
 
     feature_spec = {
         'hour': tf.FixedLenFeature(shape=[window_size], dtype=tf.int64, default_value=None),
@@ -87,6 +103,8 @@ def get_raw_feature_spec(window_size):
 
 
 def serving_input_receiver_fn(tft_metadata, window_size):
+    """ Return serving function for model deployment
+    """
 
     raw_feature_spec = get_raw_feature_spec(window_size)
 
@@ -114,6 +132,8 @@ def serving_input_receiver_fn(tft_metadata, window_size):
 
 
 def eval_input_receiver_fn(tft_metadata, window_size):
+    """ Return serving function for model analysis
+    """
 
     raw_feature_spec = get_raw_feature_spec(window_size)
 
@@ -214,20 +234,8 @@ if __name__ == '__main__':
         model.compile(optimizer=tf.keras.optimizers.Adam(lr=5e-4),
                       loss='mse',
                       metrics=['mse'])
-        # logger.info(model.summary())
+        logger.info(model.summary())
         logger.info('Done!')
-
-        # input_fn_train = input_fn(tfrecords_train_list,
-        #                               tft_metadata,
-        #                               args.window_size,
-        #                               args.batch_size)
-
-        # input_fn_eval = input_fn(tfrecords_eval_list,
-        #                               tft_metadata,
-        #                               args.window_size,
-        #                               args.batch_size)
-
-        # model.fit(x=input_fn_train, epochs=10, steps_per_epoch=steps_per_epoch_train)
 
         logger.info('Loading input_fn')
 
