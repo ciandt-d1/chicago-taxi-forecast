@@ -1,5 +1,7 @@
 # Preprocessing module
 
+This module reads the raw dataset from BigQuery, apply transformations using TFT and dump all artifacts on Google Cloud Storage
+
 ## Build for Kubeflow pipeline
 In any doubt, check the [official documentation](https://www.kubeflow.org/docs/gke/gcp-e2e/)
 
