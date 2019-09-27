@@ -1,5 +1,7 @@
 # Build Kubeflow pipeline
 
+Build Kubeflow Pipeline
+
 First, [setup up python environment](https://www.kubeflow.org/docs/pipelines/tutorials/pipelines-tutorial/#set-up-python)
 
 ```
@@ -17,7 +19,9 @@ python build_pipeline.py
 Upload pipeline throught Web interface or running the following
 
 ```
-python upload_pipeline.py
+python upload_pipeline.py  \
+    --package <path/to/local/pipeline.tar.gz> \
+    --host <kubeflow_pipeline/cluster/url>
 ```
 
 Then [run](https://www.kubeflow.org/docs/pipelines/tutorials/pipelines-tutorial/#run-the-pipeline) the pipeline using the Kubeflow Pipelines Web Interface
