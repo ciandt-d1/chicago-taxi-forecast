@@ -7,7 +7,7 @@ import os
 
 @dsl.pipeline(
     name='Time-Series-Forecast for Chicago Taxi dataset',
-    description='A pipeline to preprocess, train and measure metrics for a time series forecast problem.'
+    description='A pipeline to preprocess, train, deploy and measure metrics for a time series forecast problem.'
 )
 def chicago_taxi_pipeline(
         artifacts_dir="gs://ciandt-cognitive-sandbox-chicago-taxi-demo-bucket/{{workflow.uid}}/artifacts",
