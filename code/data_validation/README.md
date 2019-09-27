@@ -1,6 +1,8 @@
 
 # Data Validation module
 
+This module aims to read the tfrecords output by the preprocessing module and output statistics to be displayed at Kubeflow UI
+
 ## Build for Kubeflow pipeline
 In any doubt, check the [official documentation](https://www.kubeflow.org/docs/gke/gcp-e2e/)
 

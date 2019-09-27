@@ -1,3 +1,11 @@
+# -*- coding: utf-8 -*-
+
+"""
+Output dataset statistics as an html page to be rendered at Kubeflow UI
+
+OBS: The pipeline will not be interrupted if any anomaly appears.
+"""
+
 import argparse
 import tensorflow as tf
 import tensorflow_data_validation as tfdv
