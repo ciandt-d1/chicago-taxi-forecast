@@ -1,5 +1,13 @@
 # Training module
 
+This module define and train ML models.
+Up to this day, the training is done locally on K8s cluster
+
+TODO:
+
+*   Train on CMLE
+
+
 ## Build for Kubeflow pipeline
 In any doubt, check the [official documentation](https://www.kubeflow.org/docs/gke/gcp-e2e/)
 
