@@ -1,5 +1,9 @@
 # -*- coding: utf-8 -*-
 
+""" Tensorflow model zoo
+    Please, register any new model at MODEL_ZOO dictionary
+"""
+
 from models import rnn
 
 import sys
@@ -14,6 +18,7 @@ MODEL_ZOO = {
 
 
 def get_model(model_name, **kw):
+    """ Get a Tensorflow model """
     if model_name not in MODEL_ZOO:
         logger.error('Model {} does not exist')
         sys.exit(1)

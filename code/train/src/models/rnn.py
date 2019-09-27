@@ -1,12 +1,19 @@
 # -*- coding: utf-8 -*-
 
+""" RNN models
+"""
+
 import tensorflow as tf
 import math
 
-
 def rnn_v1(window_size, n_areas=77):
+    """
+    Gated Recurrent Unit (GRU) NN.
 
-  # Define inputs
+    OBS: CMLE does not support CuDNN layers, 
+    so tf.keras.layers.GRU is being used, instead of tf.keras.layers.CuDNNGRU
+    """
+    
     hour_sin = tf.keras.Input(shape=[window_size, 1], name='hour_sin')
     day_of_week_sin = tf.keras.Input(
         shape=[window_size, 1], name='day_of_week_sin')
