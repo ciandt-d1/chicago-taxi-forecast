@@ -1,5 +1,9 @@
 # -*- coding: utf-8 -*-
 
+"""
+Plot time series and builds html widget to be displayed at Kubeflow UI
+"""
+
 import logging
 from tensorflow.python.lib.io import file_io
 from google.cloud import storage
@@ -67,6 +71,7 @@ if __name__ == "__main__":
 
         image_list.append(image_uri)
 
+    # make images at GCS publicly available 
     max_tries = 5
     sleep_time = 10
     for image_uri in image_list:

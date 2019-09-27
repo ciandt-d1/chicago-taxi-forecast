@@ -1,5 +1,8 @@
 # Evaluation module
 
+This module evalutes a deployed model and builds timeseries plots as html widget to be
+loaded at Kubeflow UI
+
 ## Build for Kubeflow pipeline
 In any doubt, check the [official documentation](https://www.kubeflow.org/docs/gke/gcp-e2e/)
 
@@ -23,7 +26,9 @@ ARTIFACTS_DIR=/home/CIT/rodrigofp/Projects/Specialization2019/demo_taxi/assets
 docker run -it -v ${PWD}/src:/src -v ${ARTIFACTS_DIR}:/artifacts_dir --rm  ${DOCKER_IMAGE_NAME} bash
 ```
 
-Run container
+Run container:
+
+First, make predictions
 ```
 python3 make_predictions.py \
 --model-name chicago_taxi_forecast \
@@ -36,11 +41,13 @@ python3 make_predictions.py \
 --output-path /artifacts_dir/predictions.csv
 ```
 
+Measure evaluation metrics
 ```
 python3 evaluate.py \
 --prediction-csv /artifacts_dir/predictions.csv
 ```
 
+Plot series
 ```
 python3 plot_series.py \
 --prediction-csv /artifacts_dir/predictions.csv \
