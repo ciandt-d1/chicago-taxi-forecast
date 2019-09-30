@@ -19,5 +19,6 @@ If you have questions, please contact:
 * Diego Silva - diegosilva@ciandt.com
 * Gabriel Moreira - gabrielpm@ciandt.com
 * Leandro Vendramin - vendramin@ciandt.com
+* Lu Tung Huang - ltung@ciandt.com
 * Pedro Lelis - pedrolelis@ciandt.com
 * Rodrigo Pereira - rodrigofp@ciandt.com
