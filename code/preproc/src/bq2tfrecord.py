@@ -246,25 +246,25 @@ def _preprocess_fn(features, window_size, znorm_stats):
 
     # Transform temporal features
     output_features['hour_sin'] = _process_temporal_features_sin(
-        features['hour'], 25)
+        features['hour'], 24)
     output_features['hour_cos'] = _process_temporal_features_cos(
-        features['hour'], 25)
+        features['hour'], 24)
     output_features['day_of_week_sin'] = _process_temporal_features_sin(
-        features['day_of_week'], 8)
+        features['day_of_week'], 7)
     output_features['day_of_week_cos'] = _process_temporal_features_cos(
-        features['day_of_week'], 8)
+        features['day_of_week'], 7)
     output_features['day_of_month_sin'] = _process_temporal_features_sin(
-        features['day_of_month'], 32)
+        features['day_of_month'], 31)
     output_features['day_of_month_cos'] = _process_temporal_features_cos(
-        features['day_of_month'], 32)
+        features['day_of_month'], 31)
     output_features['week_number_sin'] = _process_temporal_features_sin(
         features['week_number'], 55)
     output_features['week_number_cos'] = _process_temporal_features_cos(
         features['week_number'], 55)
     output_features['month_sin'] = _process_temporal_features_sin(
-        features['month'], 13)
+        features['month'], 12)
     output_features['month_cos'] = _process_temporal_features_cos(
-        features['month'], 13)
+        features['month'], 12)
 
     output_features['community_area'] = features['community_area']
     # output_features['community_area_code'] = features['community_area_code']
