@@ -1,7 +1,7 @@
 numpy==1.16.3
 pandas==0.24.2
 google-cloud-storage==1.13.2
-joblib==0.13
+joblib==1.2.0
 gcsfs
 tqdm
 tensorflow-transform==0.13.0
